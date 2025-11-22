@@ -1,13 +1,19 @@
+from traceback import print_tb
+
 from jax import numpy as jnp, grad, jit
 
 
 def make_jit_update(forward, target_function, lr=0.1):
     def loss_fn(params, x):
-        return jnp.mean((forward(params, x) - target_function(x)) ** 2)
+
+        a = ((forward(params, x).reshape(-1) - target_function(x))**2)
+        return jnp.mean(a)
 
     def update(params, x):
         grads = grad(loss_fn)(params, x)
+        print(grads.shape, params.shape)
         params = params - lr * grads
+        print(params.shape)
         return params
 
     return jit(update)
