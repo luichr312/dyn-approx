@@ -5,15 +5,11 @@ from jax import numpy as jnp, grad, jit
 
 def make_jit_update(forward, target_function, lr=0.1):
     def loss_fn(params, x):
-
-        a = ((forward(params, x).reshape(-1) - target_function(x))**2)
-        return jnp.mean(a)
+        return jnp.mean((forward(params, x).reshape(-1) - target_function(x))**2)
 
     def update(params, x):
         grads = grad(loss_fn)(params, x)
-        print(grads.shape, params.shape)
         params = params - lr * grads
-        print(params.shape)
         return params
 
     return jit(update)

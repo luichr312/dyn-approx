@@ -172,8 +172,6 @@ class ImplicitHeat2D(Integrator):
             B = mass - jnp.squeeze(jax.jacobian(laplacian_x_forward)(params, self.xx_quad))
             B_sys =1.0/self.M_quad*self.volume* B.T @ (self.quad_weights_interior * B)
 
-            # Already did the following division above
-            print(mass.shape)
             mass_border = mass[self.border_mask, :]
             D_sys = 1.0/len(self.border_mask) * self.border_volume * mass_border.T @ mass_border
 
@@ -196,7 +194,6 @@ class ImplicitHeat2D(Integrator):
 
             Clamdau0 = self.lambda_dampening*rhs_H1_border_helper(mass_border, jacobians_at_boundary, params0)
 
-            # REMOVE THIS LOOP AND REPLACE IT WITH lax.scan/ lax.for_i ?
             # FIRST ITERATION JUST HAS RHS 0? NO! ALMOST...
 
             def loop_body(i, carry):
@@ -215,9 +212,9 @@ class ImplicitHeat2D(Integrator):
                 p_update = jax.scipy.linalg.cho_solve((c,low), rhs)
 
                 def compute_dsq():
-                    d = 1.0 / self.M_quad* self.volume * jnp.linalg.norm((B @ p_update).T + r1k) ** 2
-                    d += jnp.linalg.norm(p_update) ** 2 * self.reg_eps ** 2 / tau ** 2
-                    d += jnp.linalg.norm(p - params0 + p_update) ** 2 * 1 / 2 * self.reg_eps ** 2 / tau ** 2
+                    d = 1.0 / self.M_quad* self.volume * jnp.sum(((B @ p_update).T + r1k) ** 2)
+                    d += jnp.sum(p_update** 2)  * self.reg_eps ** 2 / tau ** 2
+                    d += jnp.sum((p - params0 + p_update)**2) * 1 / 2 * self.reg_eps ** 2 / tau ** 2
                     '''
                     missing H1 stuff....
                     '''

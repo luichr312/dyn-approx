@@ -1,3 +1,5 @@
+import os.path
+
 from NN_coordination import make_forward_dirichlet_bc
 from classic_optimizer import train_model_classic
 from integrators import IntegratorFittingInitialRK4, ImplicitHeat2D
@@ -25,10 +27,10 @@ def heat_exact_solution(x, t):
     return jnp.exp(-t / 2) * jnp.sin(x[0] / 2 - jnp.pi / 2) * jnp.sin(x[1] / 2 - jnp.pi / 2)
 
 def solve_transport_2d_no_bc():
-    N = 400
+    N = 200
     T = 1
     resolution_plot = 50
-    resolution_quad = 50
+    resolution_quad = 20
     d = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
     eps = 1e-4
@@ -39,27 +41,26 @@ def solve_transport_2d_no_bc():
     grid_plot = jnp.meshgrid(*axes_plot)
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    f = gaussian(xx_plot).reshape(resolution_plot, resolution_plot)
-    plt.pcolormesh(*grid_plot, f, shading='auto', cmap="viridis")
-    plt.colorbar()
-    plt.show()
-
     nn_forward, param_count = make_forward_dirichlet_bc(d, 5)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count,1), dtype=jnp.float64))
 
-    params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
+    if os.path.exists('params_heat_initial.pickle'):
+        with open('params_heat_initial.pickle', 'rb') as f:
+            params = pickle.load(f)
+    else:
+        params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
+        init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps, initial_condition)
+        init_fit.integrate(100,1)
+        init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps, initial_condition)
+        init_fit.integrate(100,1)
 
-    init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps, initial_condition)
-    init_fit.integrate(100,1)
-    init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps, initial_condition)
-    init_fit.integrate(100,1)
+        params = init_fit.params
+        with open("params_heat_initial.pickle", "wb") as f:
+            pickle.dump(params, f)
 
-    with open("params_heat_initial", "wb") as f:
-        pickle.dump(init_fit.params, f)
-
-    learned_f = nn_forward(init_fit.params, init_fit.xx_plot)
-    print("Error after fitting:", 1 / jnp.sqrt(resolution_plot**2) * jnp.linalg.norm(learned_f - gaussian(xx_plot)))
+    learned_f = nn_forward(params, xx_plot)
+    print("Error after fitting:", 1 / jnp.sqrt(resolution_plot**2) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
 
     plt.pcolormesh(*grid_plot, learned_f.reshape((resolution_plot,resolution_plot)), shading='auto', cmap="viridis")
     plt.colorbar()
@@ -74,54 +75,47 @@ def solve_transport_2d_no_bc():
 
 
 
-def test_initial_cond_learn():
+def initial_cond_learn():
     T = 1
     resolution_plot = 50
-    resolution_quad = 200
-    d = 1
-    vertices = [[-jnp.pi], [jnp.pi]]
+    resolution_quad = 80
+    dim = 2
+    vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
     eps = 1e-4
 
-    init_condition = gaussian
+    initial_condition = heat_initial_condition
 
-    xx_plot = jnp.linspace(vertices[0][0], vertices[1][0], resolution_plot).reshape(1, resolution_plot)
+    axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(dim)]
+    grid_plot = jnp.meshgrid(*axes_plot)
+    xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    f = init_condition(xx_plot).reshape(1, -1)
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 5)
-
-
+    nn_forward, param_count = make_forward_dirichlet_bc(dim, 5)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
-    params = train_model_classic(nn_forward, params, xx_plot, init_condition)
-
-    classic_f = nn_forward(params, xx_plot)
-    print("Error after classic opt:",
-          1 / jnp.sqrt(resolution_plot) * jnp.linalg.norm(classic_f - f))
-
+    params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
-                                           init_condition)
-    init_fit.integrate(100, 1)
+                                           initial_condition)
+    init_fit.integrate(200, 1)
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
-                                           init_condition)
-    init_fit.integrate(100, 1)
+                                           initial_condition)
+    init_fit.integrate(200, 1)
 
-    learned_f = nn_forward(init_fit.params, init_fit.xx_plot)
+    params = init_fit.params
+    with open("params_heat_initial_high_precision.pickle", "wb") as f:
+        pickle.dump(params, f)
 
-
+    learned_f = nn_forward(params, xx_plot)
     print("Error after fitting:",
-          1 / jnp.sqrt(resolution_plot) * jnp.linalg.norm(learned_f - f))
+          1 / jnp.sqrt(resolution_plot ** 2) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
 
-    plt.figure()
-    plt.plot(xx_plot.reshape(-1), f.reshape(-1), label="exact")
-    plt.plot(xx_plot.reshape(-1), classic_f.reshape(-1), label="classic optimiser")
-    plt.plot(xx_plot.reshape(-1), learned_f.reshape(-1), label="final")
-    plt.xlabel("x")
-    plt.ylabel("f(x)")
-    plt.title("Comparison")
-    plt.legend()
-    plt.grid(True)
+    plt.pcolormesh(*grid_plot, learned_f.reshape((resolution_plot, resolution_plot)), shading='auto', cmap="viridis")
+    plt.colorbar()
+    plt.show()
+
+
+
 
     plt.show()
 if __name__ == "__main__":
-    solve_transport_2d_no_bc()
+    initial_cond_learn()
