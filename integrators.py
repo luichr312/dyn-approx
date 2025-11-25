@@ -150,12 +150,12 @@ class ImplicitHeat2D(Integrator):
             return jnp.trace(hessians, axis1=1, axis2=2)
 
         def rhs_H1_border_helper(op_mat, op_mat_jacs, params):
-            v_border = self.forward(params, self.xx_quad[:, self.border_mask])
+            v_border = self.forward(params, self.xx_quad[:, self.border_mask])/tau
             # simple quadrature over all 4 borders at once. No quad_weights needed since periodic
             l2_contribution = 1.0 / len(self.border_mask) * self.border_volume * (v_border @ op_mat).T
 
             # The following has shape (border quad, 2)
-            jacobians = jacobian_x_forward(params, self.xx_quad[:, self.border_mask])
+            jacobians = jacobian_x_forward(params, self.xx_quad[:, self.border_mask])/tau
 
             # The first term does quadrature along the x-direction, the second along y
             h1_semi_contribution = (1.0 / len(self.border_axes_mask[0]) * self.border_volume / 2.0 *
