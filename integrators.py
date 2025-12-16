@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
-from fontTools.feaLib.ast import Block
 from jax import jit, vmap, lax
 from abc import ABC, abstractmethod
 
@@ -79,8 +78,8 @@ class Integrator(ABC):
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
             self.params = step(self.params)# .block_until_ready()
-            # if i % 10 == 0:
-            #     print(f"integration step {i}")
+            if i % 1000 == 0:
+                 print(f"integration step {i}")
             if return_values:
                 vals[:,i+1]= self.forward(self.params, self.xx_plot)
 
@@ -201,7 +200,7 @@ class ImplicitHeat2D(Integrator):
                                      @ op_mat_jacs[self.border_axes_mask[0], 0, :, 0]
                                      + (self.quad_weights_border[1] * jacobians[self.border_axes_mask[1], 1].reshape(-1, 1)).T
                                      @ op_mat_jacs[self.border_axes_mask[1], 1, :, 0]).T)
-            #h1_semi_contribution = 0*h1_semi_contribution
+            # h1_semi_contribution = 0*h1_semi_contribution
 
             return l2_contribution + h1_semi_contribution
 
@@ -226,17 +225,18 @@ class ImplicitHeat2D(Integrator):
                  + jacobians_at_boundary[self.border_axes_mask[1], 1, :, 0].T @ (
                              self.quad_weights_border[1] * jacobians_at_boundary[self.border_axes_mask[1], 1, :, 0]))
 
-            #S_sys = 0*S_sys
+            # S_sys = 0*S_sys
 
             system_matrix = B_sys + D_sys + S_sys + 3/2.0*self.reg_eps**2/tau**2*jnp.eye(S_sys.shape[0])
 
             c, low = jax.scipy.linalg.cho_factor(system_matrix)
             params0 = params
 
-            Clamdau0 = self.lambda_dampening*rhs_H1_border_helper(eval_nodes_border, jacobians_at_boundary, params0)
+            Clambdau0 = self.lambda_dampening*rhs_H1_border_helper(eval_nodes_border, jacobians_at_boundary, params0)
 
             # FIRST ITERATION JUST HAS RHS 0? NO! ALMOST...
-
+            # Consider removing lax.fori_loop and just use regular python loop. XLA optimising not as aggressive inside
+            # lax stuff.
             def loop_body(i, carry):
                 p, dsq = carry
                 diff_quot = 1/tau*(self.forward(p, self.xx_quad) - self.forward(params0, self.xx_quad))
@@ -246,7 +246,7 @@ class ImplicitHeat2D(Integrator):
                 Br1k = 1.0/self.M_quad*self.volume * ((self.quad_weights_interior.T * r1k) @ B).T
 
                 Cuk = rhs_H1_border_helper(eval_nodes_border, jacobians_at_boundary, p)
-                Cr2k = Cuk - Clamdau0
+                Cr2k = Cuk - Clambdau0
 
                 rhs_reg =  + 1/2.0*self.reg_eps**2/tau**2*(p-params0)
                 rhs = -Br1k - Cr2k - rhs_reg

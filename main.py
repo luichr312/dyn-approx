@@ -35,7 +35,7 @@ def solve_heat_2d_dirichlet_bc():
     resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
-    eps = 0.001
+    eps = 0.0001
     initial_condition = heat_initial_condition
     gauss_steps = 20
 
@@ -44,12 +44,12 @@ def solve_heat_2d_dirichlet_bc():
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 5)
+    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count,1), dtype=jnp.float64))
 
-    if os.path.exists('params_heat_initial.pickle'):
-        with open('params_heat_initial.pickle', 'rb') as f:
+    if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
+        with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
             params = pickle.load(f)
     else:
         params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
@@ -59,7 +59,7 @@ def solve_heat_2d_dirichlet_bc():
         init_fit.integrate(100,1)
 
         params = init_fit.params
-        with open("params_heat_useless.pickle", "wb") as f:
+        with open("saved_params/params_heat_useless.pickle", "wb") as f:
             pickle.dump(params, f)
 
     learned_f = nn_forward(params, xx_plot)
@@ -69,11 +69,11 @@ def solve_heat_2d_dirichlet_bc():
     plt.colorbar()
     plt.show()
 
-    heat_integrator = ImplicitHeat2D(vertices, xx_plot,resolution_quad, params, nn_forward, eps, gauss_steps, quad_type='simpson')
+    heat_integrator = ImplicitHeat2D(vertices, xx_plot,resolution_quad, params, nn_forward, eps, gauss_steps,
+                                     lambda_dampening=1, quad_type='simpson')
+
     heat_integrator.integrate(N,T)
-    print(heat_integrator.xx_quad.shape)
     learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
-    print((learned_sol-heat_exact_solution(heat_integrator.params, heat_integrator.xx_plot)).shape)
     print("Solution error:", 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot,1)))
 
     plt.pcolormesh(*grid_plot, learned_sol.reshape((resolution_plot, resolution_plot)), shading='auto', cmap="viridis")
@@ -101,12 +101,12 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     # _ = nn_forward(params, xx_plot)
 
     params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=13000)
-    eps = 0.001
+    eps = 0.00001
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
-                                           initial_condition)
+                                           initial_condition, quad_type='simpson')
     init_fit.integrate(N, 1)
-    N=500
-    eps = 0.0001
+    N=400
+    eps = 0.000001
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
                                            initial_condition, quad_type='simpson')
     init_fit.integrate(N, 1)
@@ -118,7 +118,7 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     params = init_fit.params
     learned_f = nn_forward(params, xx_plot).block_until_ready()
 
-    with open("params_heat_initial_better_hs_6", "wb") as f:
+    with open("saved_params/params_heat_initial_better_hs_6", "wb") as f:
         pickle.dump(params, f)
 
     print("Error after fitting:",
@@ -130,12 +130,12 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
 
 
 def convergence_analysis():
-    N = 2 ** np.arange(3, 9)
-    EPS = [0.001, 0.0001]
+    N = 2 ** np.arange(4, 15)
+    EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 50
-    resolution_quad = 20
+    resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     initial_condition = heat_initial_condition
@@ -145,7 +145,7 @@ def convergence_analysis():
     grid_plot = jnp.meshgrid(*axes_plot)
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 5)
+    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
@@ -159,8 +159,8 @@ def convergence_analysis():
     # init_fit.integrate(100, 1)
 
     #params = init_fit.params
-    if os.path.exists('params_heat_initial_now_no_enforced_bc.pickle'):
-        with open('params_heat_initial.pickle', 'rb') as f:
+    if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
+        with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
             params = pickle.load(f)
     else:
         raise ValueError('params_heat_initial_now.pickle does not exist')
@@ -174,13 +174,14 @@ def convergence_analysis():
     for e in range(len(EPS)):
         for n in range(len(N)):
             print(f"--- N={N[n]}, eps={EPS[e]}, Mquad={resolution_quad} ---")
-            heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps)
+            heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps,
+                                             lambda_dampening=0.8, quad_type='simpson')
             heat_integrator.integrate(N[n], T)
 
             learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
             err[e,n] = 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T))
             print(f"Error: {err}")
-        scipy.io.savemat('errors_heat_now.mat', {
+        scipy.io.savemat('error_mats/errors_heat_lambda08_inicond_hs6_3e-5.mat', {
             'errors': err[:e + 1, :],
             'errors_est': err_estimate[:e + 1, :],
             'N_s': N
@@ -189,4 +190,4 @@ def convergence_analysis():
 
     plt.show()
 if __name__ == "__main__":
-    initial_cond_learn()
+    convergence_analysis()
