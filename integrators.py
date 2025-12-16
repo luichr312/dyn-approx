@@ -193,11 +193,8 @@ class ImplicitHeat2D(Integrator):
             l2_contribution = 1.0 / len(self.border_mask) * self.border_volume * (v_border @ op_mat).T
 
             # The following has shape (border quad, 2)
-<<<<<<< HEAD
             jacobians =jacobian_x_forward(params, self.xx_quad[:, self.border_mask])/tau
-=======
             jacobians = jacobian_x_forward(params, self.xx_quad[:, self.border_mask])/tau
->>>>>>> origin/main
 
             # The first term does quadrature along the x-direction, the second along y
             h1_semi_contribution = (1.0 / len(self.border_axes_mask[0]) * self.border_volume / 2.0 *
