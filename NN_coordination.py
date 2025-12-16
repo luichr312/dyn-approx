@@ -35,10 +35,13 @@ def make_forward_dirichlet_bc(d, hidden_size):
                       + params[get_index("b3")].reshape(get_shape("b3")))
         h4 = jnp.tanh(jnp.dot(params[get_index("W4")].reshape(get_shape("W4")), h3)
                       + params[get_index("b4")].reshape(get_shape("b4")))
-        out = (jnp.dot(params[get_index("W_out")].reshape(get_shape("W_out")), h4)
+        out_no_bc = (jnp.dot(params[get_index("W_out")].reshape(get_shape("W_out")), h4)
                       + params[get_index("b_out")].reshape(get_shape("b_out")))
+        # breakpoint()
+        out = out_no_bc
+        # out = out_no_bc*((x[0]-jnp.pi)*(x[0]+jnp.pi)*(x[1]-jnp.pi)*(x[1]+jnp.pi)).reshape(1,-1)
         return out
-
-
-
+    # return forward, l[-1]
     return jit(forward), l[-1]
+
+
