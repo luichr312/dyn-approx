@@ -2,15 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 
-alpha = 0
+alpha = 0.2
 quad = 10
 quad_type = 'simpson'
 lambda_damp = 0.5
 data1 = loadmat(f"error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat")
 #data2 = loadmat(f"error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01.mat")
-
-#errors = np.vstack((data2["errors"], data1["errors"][0], data1["errors"][2]))
 errors = data1["errors"]
+#errors = np.vstack((data2["errors"], data1["errors"][0], data1["errors"][2]))
+
 print(errors.shape)
 plt.rcParams['text.usetex'] = True
 plt.rcParams['font.family'] = 'serif'
@@ -40,7 +40,7 @@ plt.axhline(3.255605877701854e-05, linestyle='-.', linewidth=1,
 
 plt.xlabel("step size h", fontsize=16)
 plt.ylabel(r"$L^2$-error at time $T=1$",fontsize=16)
-plt.title(rf"Time convergence error with $L^2(\Gamma)$-norm, $\lambda=1$", fontsize=20)
+plt.title(rf"Time convergence error with weighted $H^1(\Gamma)$-norm, $\lambda={lambda_damp}$", fontsize=20)
 plt.legend()
 plt.legend()
 plt.grid(True, which="both", linestyle="--", linewidth=0.5)
