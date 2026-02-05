@@ -131,15 +131,16 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
 
 def convergence_analysis(alpha):
     N = 2 ** np.arange(4, 15)
-    EPS = [0.01, 0.001, 0.0001]
+    EPS = [0.1, 0.01, 0.001, 0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 50
-    resolution_quad = 19
+    resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     initial_condition = heat_initial_condition
     gauss_steps = 20
+    lambda_damp = 0.5
 
     axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
     grid_plot = jnp.meshgrid(*axes_plot)
@@ -175,13 +176,13 @@ def convergence_analysis(alpha):
         for n in range(len(N)):
             print(f"--- N={N[n]}, eps={EPS[e]}, Mquad={resolution_quad} ---")
             heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps,
-                                             lambda_dampening=0, quad_type='trapezoid',alpha=alpha)
+                                             lambda_dampening=lambda_damp, quad_type='simpson',alpha=alpha)
             heat_integrator.integrate(N[n], T)
 
             learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
             err[e,n] = 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T))
 
-        scipy.io.savemat(f'error_mats/errors_heat_lambda0_inicond_hs6_3e-5_alpha{alpha}_trapezoid_19_N_4-15_Eps_0.01-0.001-0.0001.mat', {
+        scipy.io.savemat(f'error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat', {
             'errors': err[:e + 1, :],
             'errors_est': err_estimate[:e + 1, :],
             'N_s': N
@@ -193,8 +194,6 @@ def convergence_analysis(alpha):
     plt.show()
 if __name__ == "__main__":
     convergence_analysis(0)
-    convergence_analysis(0.1)
-    convergence_analysis(0.01)
-    convergence_analysis(1)
-
+    convergence_analysis(0.2)
+    #convergence_analysis(1)
 
