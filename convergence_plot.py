@@ -2,11 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 
-alpha = 0.2
+alpha = 0
 quad = 10
 quad_type = 'simpson'
-lambda_damp = 0.5
-data1 = loadmat(f"error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat")
+lambda_damp = 0
+T=0.75
+data1 = loadmat(f"error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01-0.001-0.0001_T_{T}.mat")
 #data2 = loadmat(f"error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01.mat")
 errors = data1["errors"]
 #errors = np.vstack((data2["errors"], data1["errors"][0], data1["errors"][2]))
@@ -39,13 +40,21 @@ plt.axhline(3.255605877701854e-05, linestyle='-.', linewidth=1,
             label=r"Initial condition $L^2$ error")
 
 plt.xlabel("step size h", fontsize=16)
-plt.ylabel(r"$L^2$-error at time $T=1$",fontsize=16)
-plt.title(rf"Time convergence error with weighted $H^1(\Gamma)$-norm, $\lambda={lambda_damp}$", fontsize=20)
+plt.ylabel(rf"$L^2$-error at time $T={T}$",fontsize=16)
+if alpha == 0:
+    s = rf"$L^2(\Gamma)$-norm"
+elif alpha == 0.2:
+    s = rf"weighted $H^1(\Gamma)$-norm"
+elif alpha == 1:
+    s = rf"$H^1(\Gamma)$-norm"
+else:
+    s = "SOME"
+plt.title(rf"Time convergence error with "+s, fontsize=20)
 plt.legend()
 plt.legend()
 plt.grid(True, which="both", linestyle="--", linewidth=0.5)
 plt.legend()
 
 plt.tight_layout()
-plt.savefig(f"plots/eps/heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}.eps", format="eps")
+plt.savefig(f"plots/eps/heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_T_{T}.eps", format="eps")
 plt.show()

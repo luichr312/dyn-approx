@@ -6,7 +6,7 @@ from main import heat_exact_solution
 import jax.numpy as jnp
 import scipy
 
-alpha = 0.2
+alpha = 0
 quad = 10
 quad_type = 'simpson'
 lambda_damp = 0
