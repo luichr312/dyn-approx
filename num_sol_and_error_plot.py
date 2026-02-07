@@ -12,7 +12,7 @@ quad = 10
 quad_type = 'simpson'
 lambda_damp = 0
 data = loadmat(f"saved_sols/saved_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01-0.001-0.0001_T_0.25-0.5-0.75-1.mat")
-params = data['params'][-1,-1
+params = data['params'][-1,-1]
 
 if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
     with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
