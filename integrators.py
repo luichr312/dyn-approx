@@ -66,27 +66,29 @@ class Integrator(ABC):
     def make_step(self, time_step):
         pass
 
-    def integrate(self, steps, time_bound, return_values=False):
+    def integrate(self, steps, time_bound, return_values=False, save_frames=4):
         err_estimate = 0
         if return_values:
             # Set up array in which the results of the integration will be returned
-            vals = np.zeros((self.M_plot, steps + 1))
-            vals[:, 0] = self.forward(self.params, self.xx_plot)
+            saved_p = np.zeros((self.params.shape[0], save_frames))
 
         tau = time_bound*1.0/steps
         step = self.make_step(tau)
+        save_interval = steps//save_frames
+        if not steps%save_interval == 0:
+            print(steps, save_frames,save_interval)
+            raise ValueError("save_frames must be compatible with number of steps")
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
             self.params = step(self.params)# .block_until_ready()
             #if i % 1000 == 0:
             #     print(f"integration step {i}")
-            if return_values:
-                vals[:,i+1]= self.forward(self.params, self.xx_plot)
+            if return_values and (i+1)%save_interval == 0:
+                saved_p[:,(i+1)//save_interval-1]= self.params.ravel()
 
         if return_values:
-            return err_estimate,vals
+            return err_estimate, saved_p
         return err_estimate
-
 class IntegratorFittingInitialRK4(Integrator):
     def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, target_function, quad_type="trapezoid"):
         self.target_function = target_function

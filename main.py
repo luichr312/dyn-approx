@@ -189,11 +189,47 @@ def convergence_analysis(alpha):
         })
         print(f"Error: {err}")
 
+def save_sol(alpha, times=None):
+    N = 2 ** np.arange(4, 15)
+    EPS = [0.1, 0.01, 0.001, 0.0001]
+    print("N: ", N, "EPS: ", EPS)
+    T = 1
+    resolution_quad = 10
+    d = 2
+    vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
+    gauss_steps = 20
+    lambda_damp = 0
 
+    resolution_plot = 50
+    axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
+    grid_plot = jnp.meshgrid(*axes_plot)
+    xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    plt.show()
+    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+    if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
+        with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
+            params = pickle.load(f)
+    else:
+        raise ValueError('params_heat_initial_now.pickle does not exist')
+    save_frames = 4
+    saved_params = np.zeros((len(EPS), len(N), param_count, save_frames))
+    for e in range(len(EPS)):
+        for n in range(len(N)):
+            print(f"--- N={N[n]}, eps={EPS[e]}, Mquad={resolution_quad} ---")
+            heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps,
+                                             lambda_dampening=lambda_damp, quad_type='simpson',alpha=alpha)
+
+            _, saved_params[e, n] = heat_integrator.integrate(N[n], True, save_frames)
+
+        scipy.io.savemat(
+            f'saved_sols/saved_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001_T_0.25-0.5-0.75-1.mat',
+            {
+                'params': saved_params[:e + 1],
+                'N_s': N
+            })
+
 if __name__ == "__main__":
-    convergence_analysis(0)
-    convergence_analysis(0.2)
+    save_sol(0)
+    save_sol(0.2)
     #convergence_analysis(1)
 
