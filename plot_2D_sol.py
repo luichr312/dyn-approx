@@ -29,6 +29,11 @@ grid_plot = jnp.meshgrid(*axes_plot)
 xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
 Ts = [0,0.25,0.5,0.75,1]
+
+plt.rcParams['text.usetex'] = True
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ['Computer Modern']
+
 fig = plt.figure(figsize=(5*len(Ts),6))
 axes  = [fig.add_subplot(1, 5, i+1, projection='3d') for i in range(len(Ts))]
 for i, ax in enumerate(axes):
@@ -38,12 +43,12 @@ for i, ax in enumerate(axes):
     im = ax.plot_surface(grid_plot[0], grid_plot[1], nn_forward(p_i, xx_plot).reshape(50, 50), cmap="viridis")
     ax.set_xticks([-np.pi, 0, np.pi])
     ax.set_yticks([-np.pi, 0, np.pi])
-    ax.set_title(f"$T = {Ts[i]}$", fontsize=15)
+    ax.set_title(f"$T = {Ts[i]}$", fontsize=25)
     ax.set_zlim(-0.1,1)
     #ax.set_aspect("equal", adjustable="box")
 #fig.colorbar(im, ax=axes, shrink=0.8)
 
-fig.suptitle(rf"Numerical solution of 2D Heat equation", fontsize=20, y=0.98)
+fig.suptitle(rf"Numerical solution of 2D Heat equation", fontsize=30, y=0.98)
 fig.tight_layout()
 plt.savefig(f"plots/eps/numsolvis_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_Eps_0.0001_N_{2**14}.eps", format="eps")
 plt.show()

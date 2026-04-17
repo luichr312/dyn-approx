@@ -7,13 +7,14 @@ import os, pickle
 from scipy.io import loadmat
 from matplotlib.colors import Normalize
 
-alpha = 0.2
+SAVE = False
+alpha = 0
 quad = 10
 quad_type = 'simpson'
 lambda_damp = 0
 data = loadmat(f"saved_sols/saved_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_N_4-15_Eps_0.1-0.01-0.001-0.0001_T_0.25-0.5-0.75-1.mat")
-params = data['params'][-1,-1]
-
+params = data['params'][-1,4]
+print(data['N_s'])
 if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
     with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
         params0 = pickle.load(f)
@@ -62,11 +63,16 @@ for row in range(len(Ts)):
         axes[row, col].set_rasterized(True)
         axes[row, col].set_title(titles[col])
         axes[row, col].set_aspect("equal")
+        axes[row, col].set_xticks([-np.pi, 0, np.pi])
+        axes[row, col].set_xticklabels([r"$-\pi$",0,r"$\pi$"])
+        axes[row, col].set_yticks([-np.pi, 0, np.pi])
+        axes[row, col].set_yticklabels([r"$-\pi$", 0, r"$\pi$"])
+
 
 
 for col in range(2):
     fig.colorbar(axes[0, col].collections[0], ax=axes[:, col], orientation="horizontal",pad=0.02)
 
-
-plt.savefig(f"plots/eps/numsol_vs_error_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_Eps_0.0001_N_{2**14}.eps", format="eps", dpi=300)
+if SAVE:
+    plt.savefig(f"plots/eps/numsol_vs_error_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{quad_type}_{quad}_Eps_0.0001_N_{2**14}.eps", format="eps", dpi=300)
 plt.show()

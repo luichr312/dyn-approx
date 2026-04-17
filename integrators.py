@@ -81,8 +81,8 @@ class Integrator(ABC):
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
             self.params = step(self.params)# .block_until_ready()
-            #if i % 1000 == 0:
-            #     print(f"integration step {i}")
+            if i % 100 == 0:
+                 print(f"integration step {i}")
             if return_values and (i+1)%save_interval == 0:
                 saved_p[:,(i+1)//save_interval-1]= self.params.ravel()
 

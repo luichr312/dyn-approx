@@ -105,20 +105,23 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
                                            initial_condition, quad_type='simpson')
     init_fit.integrate(N, 1)
-    N=400
+    print("First done")
+    N = 400
     eps = 0.000001
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
                                            initial_condition, quad_type='simpson')
     init_fit.integrate(N, 1)
-
+    print("Second done")
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
                                            initial_condition, quad_type='simpson')
     init_fit.integrate(N, 1)
+    print("Third done")
 
     params = init_fit.params
     learned_f = nn_forward(params, xx_plot).block_until_ready()
 
-    with open("saved_params/params_heat_initial_better_hs_6", "wb") as f:
+
+    with open("saved_params/params_heat_initial_dump", "wb") as f:
         pickle.dump(params, f)
 
     print("Error after fitting:",
@@ -191,7 +194,7 @@ def convergence_analysis(alpha):
 
 def save_sol(alpha, times=None):
     N = 2 ** np.arange(4, 15)
-    EPS = [0.1, 0.01, 0.001, 0.0001]
+    EPS = [0.01, 0.001, 0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_quad = 10
@@ -222,14 +225,14 @@ def save_sol(alpha, times=None):
             _, saved_params[e, n] = heat_integrator.integrate(N[n], True, save_frames)
 
         scipy.io.savemat(
-            f'saved_sols/saved_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001_T_0.25-0.5-0.75-1.mat',
+            f'saved_sols/saved_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.01-0.001-0.0001_T_0.25-0.5-0.75-1.mat',
             {
                 'params': saved_params[:e + 1],
                 'N_s': N
             })
 
 if __name__ == "__main__":
-    save_sol(0)
-    save_sol(0.2)
+    #save_sol(0)
+    #save_sol(0.2)
     #convergence_analysis(1)
-
+    initial_cond_learn()
