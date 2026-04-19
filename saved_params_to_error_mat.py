@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
-from NN_coordination import make_forward_dirichlet_bc
+from NN_coordination import make_forward
 from main import heat_exact_solution
 import jax.numpy as jnp
 import scipy
@@ -15,7 +15,7 @@ saved_params = data["params"]
 num_eps = saved_params.shape[0]
 num_N = saved_params.shape[1]
 d = 2
-nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+nn_forward, param_count = make_forward(d, 6)
 
 vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
 resolution_plot = 50

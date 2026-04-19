@@ -1,6 +1,6 @@
 import os.path
 
-from NN_coordination import make_forward_dirichlet_bc
+from NN_coordination import make_forward
 from classic_optimizer import train_model_classic
 from integrators import IntegratorFittingInitialRK4, ImplicitHeat2D
 from jax import random, numpy as jnp
@@ -44,7 +44,7 @@ def solve_heat_2d_dirichlet_bc():
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+    nn_forward, param_count = make_forward(d, 6)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count,1), dtype=jnp.float64))
 
@@ -92,7 +92,7 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     grid_plot = jnp.meshgrid(*axes_plot)
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    nn_forward, param_count = make_forward_dirichlet_bc(dim, 6)
+    nn_forward, param_count = make_forward(dim, 6)
     key = random.PRNGKey(0)
 
     # DATA TYPE!!!!
@@ -149,7 +149,7 @@ def convergence_analysis(alpha):
     grid_plot = jnp.meshgrid(*axes_plot)
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+    nn_forward, param_count = make_forward(d, 6)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
@@ -208,7 +208,7 @@ def save_sol(alpha, times=None):
     grid_plot = jnp.meshgrid(*axes_plot)
     xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+    nn_forward, param_count = make_forward(d, 6)
     if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
         with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
             params = pickle.load(f)

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from NN_coordination import make_forward_dirichlet_bc
+from NN_coordination import make_forward
 from main import heat_exact_solution
 import jax.numpy as jnp
 import os, pickle
@@ -22,7 +22,7 @@ else:
     raise ValueError('params_heat_initial_now.pickle does not exist')
 
 d = 2
-nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+nn_forward, param_count = make_forward(d, 6)
 
 resolution_plot = 50
 vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
