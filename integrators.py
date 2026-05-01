@@ -71,6 +71,8 @@ class Integrator(ABC):
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
             self.params = step(self.params)# .block_until_ready()
+            if i % 100 == 0:
+                 print(f"integration step {i}")
 
     def integrate_save_frames(self, steps, time_bound, return_values=False, save_frames=4):
         err_estimate = 0
@@ -100,7 +102,9 @@ class IntegratorFittingInitialRK4(Integrator):
         self.target_function = target_function
         self.complex = complex
         super().__init__(vertices, xx_plot, resolution_quad, params, forward, reg_eps, quad_type)
-
+        self.one_border_volume = jnp.abs(vertices[1][0] - vertices[0][0])
+        self.h = self.one_border_volume / (resolution_quad - 1)
+        self.h_squared = self.h * self.h
     def make_step(self, tau):
         if not self.complex:
             return self.make_step_real(tau)
@@ -111,31 +115,31 @@ class IntegratorFittingInitialRK4(Integrator):
         def step(params):
             def mass_NGS(p):
                 grad = jnp.squeeze(jax.jacobian(self.forward)(p, self.xx_quad))
-                mass_mat = self.volume * 1.0 / self.M_quad * grad.T @ (self.quad_weights_interior * grad)
+                mass_mat = self.h_squared* grad.T @ (self.quad_weights_interior * grad)
                 return mass_mat, grad
 
             f = self.target_function(self.xx_quad) - self.forward(self.params0, self.xx_quad)
             # Create and solve system for k1
             M_NGS, grad_phi = mass_NGS(params)
-            rhs = 1.0/self.M_quad*self.volume* (f @ (self.quad_weights_interior * grad_phi)).T
+            rhs = self.h_squared * (f @ (self.quad_weights_interior * grad_phi)).T
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k1 = jnp.linalg.solve(M_reg, rhs)
 
             # Create and solve system for k2
             M_NGS, grad_phi = mass_NGS(params + 0.5 * tau * k1)
-            rhs = 1.0/self.M_quad*self.volume* (f @ (self.quad_weights_interior * grad_phi)).T
+            rhs = self.h_squared* (f @ (self.quad_weights_interior * grad_phi)).T
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k2 = jnp.linalg.solve(M_reg, rhs)
 
             # Create and solve system for k3
             M_NGS, grad_phi = mass_NGS(params + 0.5 * tau * k2)
-            rhs = 1.0/self.M_quad*self.volume* (f @ (self.quad_weights_interior * grad_phi)).T
+            rhs = self.h_squared* (f @ (self.quad_weights_interior * grad_phi)).T
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k3 = jnp.linalg.solve(M_reg, rhs)
 
             # Create and solve system for k4
             M_NGS, grad_phi = mass_NGS(params + tau * k3)
-            rhs = 1.0/self.M_quad*self.volume* (f @ (self.quad_weights_interior * grad_phi)).T
+            rhs = self.h_squared* (f @ (self.quad_weights_interior * grad_phi)).T
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k4 = jnp.linalg.solve(M_reg, rhs)
 
@@ -147,47 +151,37 @@ class IntegratorFittingInitialRK4(Integrator):
         def step(params):
             def mass_NGS(p):
                 grad_split = jnp.squeeze(jax.jacobian(self.forward)(p, self.xx_quad))
-
-                mass_mat_re = self.volume * 1.0 / self.M_quad * grad_split[0].T @ (self.quad_weights_interior * grad_split[0])
-                mass_mat_im = self.volume * 1.0 / self.M_quad * grad_split[1].T @ (self.quad_weights_interior * grad_split[1])
-                mass_mat = mass_mat_re + mass_mat_im
+                mass_mat = self.h_squared * jnp.einsum("kni,knj->ij", grad_split, self.quad_weights_interior * grad_split)
                 return mass_mat, grad_split
 
-            f_re = jnp.real(self.target_function(self.xx_quad)) - self.forward(self.params0, self.xx_quad)[0]
-            f_re = f_re.reshape(1,-1)
-            f_im = jnp.imag(self.target_function(self.xx_quad)) - self.forward(self.params0, self.xx_quad)[1]
-            f_im = f_im.reshape(1,-1)
+            target_split = jnp.stack([jnp.real(self.target_function(self.xx_quad)), jnp.imag(self.target_function(self.xx_quad))])
+            f_split = target_split - self.forward(self.params0, self.xx_quad)
+
             # Create and solve system for k1
             M_NGS, grad_phi_split = mass_NGS(params)
-            
-            rhs_re = 1.0/self.M_quad*self.volume* (f_re @ (self.quad_weights_interior * grad_phi_split[0])).T
-            rhs_im = 1.0/self.M_quad*self.volume* (f_im @ (self.quad_weights_interior * grad_phi_split[1])).T
-            rhs = rhs_re + rhs_im
+            rhs = self.h_squared * jnp.einsum("kn,kni->i",
+                                    f_split, self.quad_weights_interior*grad_phi_split).reshape(-1,1)
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
-
             k1 = jnp.linalg.solve(M_reg, rhs)
-            # Create and solve system for k2
 
+            # Create and solve system for k2
             M_NGS, grad_phi_split = mass_NGS(params + 0.5 * tau * k1)
-            rhs_re = 1.0 / self.M_quad * self.volume * (f_re @ (self.quad_weights_interior * grad_phi_split[0])).T
-            rhs_im = 1.0 / self.M_quad * self.volume * (f_im @ (self.quad_weights_interior * grad_phi_split[1])).T
-            rhs = rhs_re + rhs_im
+            rhs = self.h_squared * jnp.einsum("kn,kni->i",
+                                                              f_split, self.quad_weights_interior * grad_phi_split).reshape(-1,1)
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k2 = jnp.linalg.solve(M_reg, rhs)
 
             # Create and solve system for k3
             M_NGS, grad_phi_split = mass_NGS(params + 0.5 * tau * k2)
-            rhs_re = 1.0 / self.M_quad * self.volume * (f_re @ (self.quad_weights_interior * grad_phi_split[0])).T
-            rhs_im = 1.0 / self.M_quad * self.volume * (f_im @ (self.quad_weights_interior * grad_phi_split[1])).T
-            rhs = rhs_re + rhs_im
+            rhs = self.h_squared * jnp.einsum("kn,kni->i",
+                                                              f_split, self.quad_weights_interior * grad_phi_split).reshape(-1,1)
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k3 = jnp.linalg.solve(M_reg, rhs)
 
             # Create and solve system for k4
             M_NGS, grad_phi_split = mass_NGS(params + tau * k3)
-            rhs_re = 1.0 / self.M_quad * self.volume * (f_re @ (self.quad_weights_interior * grad_phi_split[0])).T
-            rhs_im = 1.0 / self.M_quad * self.volume * (f_im @ (self.quad_weights_interior * grad_phi_split[1])).T
-            rhs = rhs_re + rhs_im
+            rhs = self.h_squared * jnp.einsum("kn,kni->i",
+                        f_split, self.quad_weights_interior * grad_phi_split).reshape(-1,1)
             M_reg = M_NGS + self.reg_eps ** 2 * jnp.eye(len(rhs))
             k4 = jnp.linalg.solve(M_reg, rhs)
 
@@ -269,7 +263,7 @@ class ImplicitHeat2D(Integrator):
 
             eval_dparam_border = eval_dparam[self.border_mask, :]
             sys_l2_border = (self.h * eval_dparam_border.T @(self.quad_weights_border_periodic * eval_dparam_border))
-
+            #sys_l2_border = 0*sys_l2_border
             # The following returns (num of border points, dimension, len(params), 1) and contains for every point on the
             # border and for every parameter params: [d_p d_1 Phi, d_p d_2 Phi]
             eval_dparam_dx_border = 1/tau*jax.jacobian(jacobian_x_forward)(params, self.xx_quad[:, self.border_mask])
@@ -292,7 +286,7 @@ class ImplicitHeat2D(Integrator):
             params0 = params
 
             rhs_border_0_lambda = self.lambda_dampening*rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
-
+            #rhs_border_0_lambda = 0*rhs_border_0_lambda
             # FIRST ITERATION JUST HAS RHS 0? NO! ALMOST...
             # Consider removing lax.fori_loop and just use regular python loop. XLA optimising not as aggressive inside
             # lax stuff.
@@ -334,7 +328,7 @@ class ImplicitHeat2D(Integrator):
 
                 rhs_border_stage = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params)
                 rhs_border = rhs_border_stage - rhs_border_0_lambda
-
+                #rhs_border = 0*rhs_border
                 rhs_reg = 1 / 2.0 * self.reg_eps ** 2 / tau ** 2 * (params - params0)
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
                 p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
@@ -399,25 +393,30 @@ class ImplicitSchroedinger2D(Integrator):
 
 
         def rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params_stage):
+            # ((Re,Im), border points)
             eval_border_stage = self.forward(params_stage, self.xx_quad[:, self.border_mask]) / tau
             # quadrature over all 4 borders at once
-            l2_contribution = self.h * (self.quad_weights_border_periodic.T * eval_border_stage @ eval_dparam_border).T
+            l2_contribution = self.h * (
+                jnp.einsum("kn,kni->i", self.quad_weights_border_periodic.T * eval_border_stage, eval_dparam_border)
+            ).reshape(-1, 1)
 
-            # The following has shape (border quad, dim)
+            # The following has shape ((Re,Im), border quad, dim)
             eval_dx_border_stage = jacobian_x_forward(params_stage, self.xx_quad[:, self.border_mask]) / tau
 
             # The first term does quadrature along the x-direction, the second along y
-            #h1_semi_contribution = (1.0 / len(self.border_axes_mask[0]) * self.one_border_volume*4*
-
-            h1_semi_contribution = self.alpha*(self.h *
-                    ((self.quad_weights_border[0].T * eval_dx_border_stage[self.border_axes_mask[0], 0])
-                     @ eval_dparam_dx_border[self.border_axes_mask[0], 0, :, 0]
-                     + (self.quad_weights_border[1].T * eval_dx_border_stage[self.border_axes_mask[1], 1])
-                     @ eval_dparam_dx_border[self.border_axes_mask[1], 1, :, 0]).T)
+            # eval_dparam_dx_border has shape ((Re,Im), num of border points, dimension, len(params))
+            h1_semi_contribution = self.alpha * self.h * (
+                jnp.einsum("kn,kni->i", self.quad_weights_border[0].T * eval_dx_border_stage[:, self.border_axes_mask[0], 0],
+                           eval_dparam_dx_border[:, self.border_axes_mask[0], 0])
+                + jnp.einsum("kn,kni->i", self.quad_weights_border[1].T * eval_dx_border_stage[:, self.border_axes_mask[1], 1],
+                           eval_dparam_dx_border[:, self.border_axes_mask[1], 1])
+            ).reshape(-1, 1)
             #h1_semi_contribution = 0*h1_semi_contribution
 
             return l2_contribution + h1_semi_contribution
 
+        # Making use of the fact that for real solution to normal equations,
+        # we need Re(X^T X) and that Re(X^T X) = Re(X)^T Re(X) + Im(X)^T Im(X) (or analogous in L^2 situation)
         def step(params):
             # Returns (Re, Im) x quad x params
             eval_dparam = 1 / tau * jnp.squeeze(jax.jacobian(self.forward)(params, self.xx_quad))
@@ -431,23 +430,22 @@ class ImplicitSchroedinger2D(Integrator):
                                                           self.quad_weights_interior*eval_impl_euler)
 
             eval_dparam_border = eval_dparam[:, self.border_mask, :]
-            sys_l2_border = (self.h * eval_dparam_border.T @(self.quad_weights_border_periodic * eval_dparam_border))
             sys_l2_border = self.h* jnp.einsum("kni,knj->ij", eval_dparam_border,
                                                         self.quad_weights_border_periodic * eval_dparam_border)
 
 
             # The following returns ((Re, Im), num of border points, dimension, len(params)) and contains for Re,Im, for every point on the
             # border and for every parameter params: [d_p d_1 Phi, d_p d_2 Phi]
-            eval_dparam_dx_border = 1 / tau * jnp.squeeze(jnp.swapaxes(
-                jax.jacobian(jacobian_x_forward)(params, self.xx_quad[:, self.border_mask]), 0, 1))
+            eval_dparam_dx_border = 1 / tau * jnp.squeeze(
+                jax.jacobian(jacobian_x_forward)(params, self.xx_quad[:, self.border_mask]))
 
             # For every direction we do the quadrature along the corresponding axis of eval_dparam_dx_border such that we choose
             # the corresponding partial derivative
             sys_h1_border = self.alpha * self.h * (
-                np.einsum("kni,knj->ij", eval_dparam_dx_border[:,self.border_axes_mask[0], 0],
-                          self.quad_weights_border[0], eval_dparam_dx_border[:,self.border_axes_mask[0], 0])
-                + np.einsum("kni,knj->ij", eval_dparam_dx_border[:,self.border_axes_mask[1], 1],
-                          self.quad_weights_border[1], eval_dparam_dx_border[:,self.border_axes_mask[1], 1])
+                jnp.einsum("kni,knj->ij", eval_dparam_dx_border[:,self.border_axes_mask[0], 0],
+                          self.quad_weights_border[0]*eval_dparam_dx_border[:,self.border_axes_mask[0], 0])
+                + jnp.einsum("kni,knj->ij", eval_dparam_dx_border[:,self.border_axes_mask[1], 1],
+                          self.quad_weights_border[1]*eval_dparam_dx_border[:,self.border_axes_mask[1], 1])
             )
             #sys_h1_border = 0*sys_h1_border
 
@@ -459,26 +457,37 @@ class ImplicitSchroedinger2D(Integrator):
 
             rhs_border_0_lambda = self.lambda_dampening*rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
 
+            potential = self.potential(self.xx_quad)
+
             # FIRST ITERATION JUST HAS RHS 0? NO! ALMOST...
             for k in range(self.gauss_iter_steps):
-                diff_quot = 1 / tau * (self.forward(params, self.xx_quad) - self.forward(params0, self.xx_quad))
+                # (Re,Im) x quad
+                # print(params.shape)
+                eval_stage = self.forward(params, self.xx_quad)
+                # breakpoint()
+                diff_quot = 1 / tau * (eval_stage - self.forward(params0, self.xx_quad))
                 # THIS DOESN'T NEED TO BE COMPUTED ON FIRST PASS
-                eval_laplacian_stage = laplacian_x_forward(params, self.xx_quad).reshape(1, -1)
-                rhs_eval_l2_interior = diff_quot - eval_laplacian_stage
-                rhs_l2_interior = self.h_squared * (
-                            (self.quad_weights_interior.T * rhs_eval_l2_interior) @ eval_impl_euler).T
+                # (Re,Im) x quad
+                eval_laplacian_stage = laplacian_x_forward(params, self.xx_quad)
+                eval_potential_stage = potential * eval_stage
+                eval_f_stage = (jnp.stack([-eval_laplacian_stage[1], eval_laplacian_stage[0]])
+                                + jnp.stack([eval_potential_stage[1], -eval_potential_stage[0]]))
+                rhs_eval_l2_interior = diff_quot - eval_f_stage
 
+                rhs_l2_interior = self.h_squared * (
+                    jnp.einsum("kn,kni->i", self.quad_weights_interior.T * rhs_eval_l2_interior, eval_impl_euler)
+                ).reshape(-1,1)
                 rhs_border_stage = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params)
                 rhs_border = rhs_border_stage - rhs_border_0_lambda
 
                 rhs_reg = 1 / 2.0 * self.reg_eps ** 2 / tau ** 2 * (params - params0)
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
-                p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
+                p_update = jax.scipy.linalg.cho_solve((c, low), rhs).reshape(-1,1)
                 params = params + p_update
 
             #delta_sq = 0
             #params, delta_sq = lax.fori_loop(0, self.gauss_iter_steps, loop_body, (params, delta_sq))
 
             return params
-        #return step
+        # return step
         return jit(step)

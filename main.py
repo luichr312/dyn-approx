@@ -52,15 +52,7 @@ def solve_heat_2d_dirichlet_bc():
         with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
             params = pickle.load(f)
     else:
-        params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
-        init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps, initial_condition)
-        init_fit.integrate(100,1)
-        init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps, initial_condition)
-        init_fit.integrate(100,1)
-
-        params = init_fit.params
-        with open("saved_params/params_heat_useless.pickle", "wb") as f:
-            pickle.dump(params, f)
+        raise ValueError("No saved params found")
 
     learned_f = nn_forward(params, xx_plot)
     print("Error after fitting:", 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
@@ -121,7 +113,7 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     learned_f = nn_forward(params, xx_plot).block_until_ready()
 
 
-    with open("saved_params/params_heat_initial_dump", "wb") as f:
+    with open("saved_params/schroedinger_sine/params_heat_initial_dump", "wb") as f:
         pickle.dump(params, f)
 
     print("Error after fitting:",
@@ -235,4 +227,5 @@ if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
     #convergence_analysis(1)
-    initial_cond_learn()
+    #initial_cond_learn()
+    solve_heat_2d_dirichlet_bc()

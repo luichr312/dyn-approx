@@ -45,6 +45,7 @@ def make_forward(d, hidden_size):
     return jit(forward), l[-1]
 
 def make_forward_schroedinger_complex(d, hidden_size):
+    # CHANGED TO MORE DEPTH
     # Set up names and shape of parameters
     keys = ["b_input", "W1", "b1", "W2", "b2", "W3", "b3", "W4", "b4", "W_out", "b_out"]
     shapes = [(0, 0), (d, 1), (hidden_size, d), (hidden_size, 1)]
@@ -66,6 +67,7 @@ def make_forward_schroedinger_complex(d, hidden_size):
     # Input: x : (mesh_size, d)
     # Output : (mesh_size, 1)
     def forward(params, x):
+
         h0 = x + params[get_index("b_input")].reshape(get_shape("b_input"))
         h1 = jnp.tanh(jnp.dot(params[get_index("W1")].reshape(get_shape("W1")), h0)
                       + params[get_index("b1")].reshape(get_shape("b1")))
@@ -75,8 +77,12 @@ def make_forward_schroedinger_complex(d, hidden_size):
                       + params[get_index("b3")].reshape(get_shape("b3")))
         h4 = jnp.tanh(jnp.dot(params[get_index("W4")].reshape(get_shape("W4")), h3)
                       + params[get_index("b4")].reshape(get_shape("b4")))
+        #h5 = jnp.tanh(jnp.dot(params[get_index("W5")].reshape(get_shape("W5")), h4)
+        #              + params[get_index("b5")].reshape(get_shape("b5")))
         out = (jnp.dot(params[get_index("W_out")].reshape(get_shape("W_out")), h4)
                       + params[get_index("b_out")].reshape(get_shape("b_out")))
+
+
         return out
     # return forward, l[-1]
     return jit(forward), l[-1]
