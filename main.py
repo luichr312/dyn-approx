@@ -5,10 +5,14 @@ from classic_optimizer import train_model_classic
 from integrators import IntegratorFittingInitialRK4, ImplicitHeat2D
 from jax import random, numpy as jnp
 import jax
+from jax import debug
 import matplotlib.pyplot as plt
 import pickle
 import numpy as np
 import scipy
+
+# TODO: get 1e-3 error with this params
+
 # jax.config.update("jax_log_compiles", True)
 # jax.config.update("jax_debug_nans", True)
 # jax.config.update("jax_debug_infs", True)
@@ -49,9 +53,11 @@ def solve_heat_2d_dirichlet_bc():
     params = jnp.array(random.normal(key, (param_count,1), dtype=jnp.float64))
 
     if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
+        print("Loading params...")
         with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
             params = pickle.load(f)
     else:
+        print("Fitting solution...")
         params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
         init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps, initial_condition)
         init_fit.integrate(100,1)
@@ -68,7 +74,7 @@ def solve_heat_2d_dirichlet_bc():
     plt.pcolormesh(*grid_plot, learned_f.reshape((resolution_plot,resolution_plot)), shading='auto', cmap="viridis")
     plt.colorbar()
     plt.show()
-
+    print("Starting time integration...")
     heat_integrator = ImplicitHeat2D(vertices, xx_plot,resolution_quad, params, nn_forward, eps, gauss_steps,
                                      lambda_dampening=1, quad_type='simpson')
 
@@ -133,8 +139,8 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
 
 
 def convergence_analysis(alpha):
-    N = 2 ** np.arange(4, 15)
-    EPS = [0.1, 0.01, 0.001, 0.0001]
+    N = 2 ** np.arange(7, 12)
+    EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 50
@@ -143,7 +149,7 @@ def convergence_analysis(alpha):
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     initial_condition = heat_initial_condition
     gauss_steps = 20
-    lambda_damp = 0.5
+    lambda_damp = 1
 
     axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
     grid_plot = jnp.meshgrid(*axes_plot)
@@ -185,12 +191,12 @@ def convergence_analysis(alpha):
             learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
             err[e,n] = 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T))
 
+            print(f"Error: {err}")
         scipy.io.savemat(f'error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat', {
             'errors': err[:e + 1, :],
             'errors_est': err_estimate[:e + 1, :],
             'N_s': N
         })
-        print(f"Error: {err}")
 
 def save_sol(alpha, times=None):
     N = 2 ** np.arange(4, 15)
@@ -234,5 +240,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    #convergence_analysis(1)
-    initial_cond_learn()
+    convergence_analysis(1) # here alpha = 1
+    #initial_cond_learn()

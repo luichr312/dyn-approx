@@ -1,0 +1,3 @@
+git add .
+git commit -m "Fixed the navigation bar layout"
+git push -u h-factor

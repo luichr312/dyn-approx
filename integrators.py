@@ -1,4 +1,5 @@
 import jax
+from jax import debug
 import jax.numpy as jnp
 import numpy as np
 from jax import jit, vmap, lax
@@ -195,15 +196,16 @@ class ImplicitHeat2D(Integrator):
                      + (self.quad_weights_border[1].T * eval_dx_border_stage[self.border_axes_mask[1], 1])
                      @ eval_dparam_dx_border[self.border_axes_mask[1], 1, :, 0]).T)
             #h1_semi_contribution = 0*h1_semi_contribution
-
+            debug.breakpoint()
             return l2_contribution + h1_semi_contribution
 
         def step(params):
 
             eval_dparam = 1/tau*jnp.squeeze(jax.jacobian(self.forward)(params, self.xx_quad))
+            # This is our matrix A evaluated at the inner quad points.
             eval_impl_euler = eval_dparam - jnp.squeeze(jax.jacobian(laplacian_x_forward)(params, self.xx_quad))
+            #debug.breakpoint()
             sys_l2_interior = self.h_squared * eval_impl_euler.T @ (self.quad_weights_interior * eval_impl_euler)
-
             eval_dparam_border = eval_dparam[self.border_mask, :]
             sys_l2_border = (self.h * eval_dparam_border.T @(self.quad_weights_border_periodic * eval_dparam_border))
 
@@ -222,10 +224,19 @@ class ImplicitHeat2D(Integrator):
 
             #sys_h1_border = 0*sys_h1_border
 
-            system_matrix = (sys_l2_interior + sys_l2_border + sys_h1_border
-                             + 3/2.0*self.reg_eps**2/tau**2*jnp.eye(sys_h1_border.shape[0]))
-
-            c, low = jax.scipy.linalg.cho_factor(system_matrix)
+            system_matrix = (tau**2*sys_l2_interior + sys_l2_border + sys_h1_border
+                             + 3/2.0*self.reg_eps**2*jnp.eye(sys_h1_border.shape[0]))
+            
+            #cond = jnp.linalg.cond(system_matrix)
+            #jax.lax.cond(
+            #    cond > 1e10,
+            #    lambda _: debug.print("Condition number: {x}", x=cond),
+            #    lambda _: None,
+            #    operand=None
+            #)
+            
+            #debug.breakpoint()
+            #c, low = jax.scipy.linalg.cho_factor(system_matrix)
             params0 = params
 
             rhs_border_0_lambda = self.lambda_dampening*rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
@@ -272,10 +283,22 @@ class ImplicitHeat2D(Integrator):
                 rhs_border_stage = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params)
                 rhs_border = rhs_border_stage - rhs_border_0_lambda
 
-                rhs_reg = 1 / 2.0 * self.reg_eps ** 2 / tau ** 2 * (params - params0)
-                rhs = -rhs_l2_interior - rhs_border - rhs_reg
-                p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
+                # NOTE: changed
+                rhs_reg =  1 / 2.0 * self.reg_eps ** 2 *(params - params0)
+                rhs = -tau**2*rhs_l2_interior - rhs_border - rhs_reg
+                #p_update = jnp.linalg.solve(system_matrix, rhs)
+                # NOTE: try lstsq later
+                p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]
+                #if jnp.any(jnp.isnan(p_update)):
+                #    debug.print("Fucked update {x}", x=p_update, ordered=True)
+                #p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
                 params = params + p_update
+                jax.lax.cond(
+                    jnp.linalg.norm(p_update) < 1e-10,
+                    lambda _: debug.print("p_update: {x}", x=p_update),
+                    lambda _: None,
+                    operand=None
+                )
 
             #delta_sq = 0
             #params, delta_sq = lax.fori_loop(0, self.gauss_iter_steps, loop_body, (params, delta_sq))
@@ -283,3 +306,5 @@ class ImplicitHeat2D(Integrator):
             return params
         #return step
         return jit(step)
+
+
