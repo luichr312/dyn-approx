@@ -179,7 +179,7 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
     plt.show()
 
 
-def convergence_analysis(alpha):
+def convergence_analysis(alpha, domain_type="square"):
     N = 2 ** np.arange(7, 12)
     EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
@@ -188,13 +188,18 @@ def convergence_analysis(alpha):
     resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
-    initial_condition = heat_initial_condition
+    if domain_type == "square":
+        initial_condition = heat_initial_condition_square
+        axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
+        grid_plot = jnp.meshgrid(*axes_plot)
+        xx_plot = jnp.stack([g.ravel() for g in grid_plot])
+    elif domain_type == "L":
+        initial_condition = heat_initial_condition_L
+        xx_plot, _ = l_shape_quadrature(resolution_plot, quad_type="simpson")
+   
     gauss_steps = 20
     lambda_damp = 1
 
-    axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
-    grid_plot = jnp.meshgrid(*axes_plot)
-    xx_plot = jnp.stack([g.ravel() for g in grid_plot])
 
     nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
     key = random.PRNGKey(0)
@@ -217,8 +222,10 @@ def convergence_analysis(alpha):
         raise ValueError('params_heat_initial_now.pickle does not exist')
 
     learned_f = nn_forward(params, xx_plot)
+    volume = 3*jnp.pi**2
+    n_plot_points = 3*resolution_plot**2 - 2*resolution_plot
     print("Error after fitting:",
-          (2*jnp.pi) / resolution_plot * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
+          jnp.sqrt(volume/n_plot_points) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
 
     err = np.zeros((len(EPS), len(N)))
     err_estimate = np.zeros((len(EPS), len(N)))
@@ -226,11 +233,11 @@ def convergence_analysis(alpha):
         for n in range(len(N)):
             print(f"--- N={N[n]}, eps={EPS[e]}, Mquad={resolution_quad} ---")
             heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps,
-                                             lambda_dampening=lambda_damp, quad_type='simpson',alpha=alpha)
+                                             lambda_dampening=lambda_damp, domain_type=domain_type, quad_type='simpson',alpha=alpha)
             heat_integrator.integrate(N[n], T)
 
             learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
-            err[e,n] = 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T))
+            err[e,n] = jnp.sqrt(volume/n_plot_points) * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T, domain_type=domain_type))
 
             print(f"Error: {err}")
         scipy.io.savemat(f'error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat', {
@@ -281,5 +288,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    #convergence_analysis(1) # here alpha = 1
-    initial_cond_learn(domain_type="L")
+    convergence_analysis(1,domain_type="L") # here alpha = 1
+    #initial_cond_learn(domain_type="L")
