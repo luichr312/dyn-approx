@@ -1,5 +1,5 @@
 import os.path
-
+import ipdb
 from NN_coordination import make_forward_dirichlet_bc
 from classic_optimizer import train_model_classic
 from integrators import IntegratorFittingInitialRK4, ImplicitHeat2D
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pickle
 import numpy as np
 import scipy
+from l_domain_utils import l_shape_quadrature, l_weights_1d, square_rule
 
 # TODO: get 1e-3 error with this params
 
@@ -25,14 +26,22 @@ def gaussian(x):
 def triangle_1d(x):
     return jnp.maximum(0, -2*jnp.abs(x)+1)
 
+def heat_initial_condition_L(x):
+    return jnp.sin(x[0]) * jnp.sin(x[1])
 
-def heat_initial_condition(x):
+def heat_initial_condition_square(x):
     return jnp.sin(x[0] / 2 - jnp.pi / 2) * jnp.sin(x[1] / 2 - jnp.pi / 2)
+    
 
-def heat_exact_solution(x, t):
-    return jnp.exp(-t / 2) * jnp.sin(x[0] / 2 - jnp.pi / 2) * jnp.sin(x[1] / 2 - jnp.pi / 2)
+def heat_exact_solution(x, t, domain_type="square"):
+    if domain_type == "square":
+        return jnp.exp(-t / 2) * jnp.sin(x[0] / 2 - jnp.pi / 2) * jnp.sin(x[1] / 2 - jnp.pi / 2)
+    elif domain_type == "L":
+        return jnp.exp(-2*t)*jnp.sin(x[0]) * jnp.sin(x[1])
+    else: 
+        raise ValueError("Domain has to be either square or L")
 
-def solve_heat_2d_dirichlet_bc():
+def solve_heat_2d_dirichlet_bc(domain_type="square"):
     N = 256
     T = 1
     resolution_plot = 50
@@ -80,25 +89,31 @@ def solve_heat_2d_dirichlet_bc():
 
     heat_integrator.integrate(N,T)
     learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
-    print("Solution error:", 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot,1)))
+    print("Solution error:", 2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot,1, domain_type=domain_type)))
 
     plt.pcolormesh(*grid_plot, learned_sol.reshape((resolution_plot, resolution_plot)), shading='auto', cmap="viridis")
     plt.colorbar()
     plt.show()
 
 
-def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
+def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
     resolution_plot = 50
     dim = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
 
-    initial_condition = heat_initial_condition
-
-    axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(dim)]
-    grid_plot = jnp.meshgrid(*axes_plot)
-    xx_plot = jnp.stack([g.ravel() for g in grid_plot])
-
-    nn_forward, param_count = make_forward_dirichlet_bc(dim, 6)
+    if domain_type == "square":
+        initial_condition = heat_initial_condition_square
+        axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(dim)]
+        grid_plot = jnp.meshgrid(*axes_plot)
+        xx_plot = jnp.stack([g.ravel() for g in grid_plot])
+    elif domain_type == "L":
+        initial_condition = heat_initial_condition_L
+        xx_plot, _ = l_shape_quadrature(resolution_plot, quad_type="simpson")
+    else:
+        raise ValueError("Domain has to be either square or L")
+        
+    
+    nn_forward, param_count = make_forward_dirichlet_bc(dim, 8)
     key = random.PRNGKey(0)
 
     # DATA TYPE!!!!
@@ -106,20 +121,46 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     #xx_plot_np = np.array(xx_plot)
     # _ = nn_forward(params, xx_plot)
 
-    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=13000)
-    eps = 0.00001
+    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=10000)
+    eps = 0.0001
+
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
-                                           initial_condition, quad_type='simpson')
+                                           initial_condition, domain_type=domain_type, quad_type='simpson')
     init_fit.integrate(N, 1)
+    params = init_fit.params
+    learned_f = nn_forward(params, xx_plot).block_until_ready()
+
+
+    with open(f"saved_params/params_heat_initial_dump_{domain_type}", "wb") as f:
+        pickle.dump(params, f)
+
+    domain_volume = 4*jnp.pi**2 if domain_type == "square" else 3*jnp.pi**2 
+    n_plot_points = resolution_plot**2 if domain_type == "square" else 3*resolution_plot**2-2*resolution_plot
+    print("Error after fitting:",
+          jnp.sqrt(domain_volume / n_plot_points) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
+
+   
     print("First done")
     N = 400
-    eps = 0.000001
+    eps = 0.00001
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
-                                           initial_condition, quad_type='simpson')
+                                           initial_condition, domain_type=domain_type, quad_type='simpson')
     init_fit.integrate(N, 1)
+    
     print("Second done")
+    params = init_fit.params
+    learned_f = nn_forward(params, xx_plot).block_until_ready()
+
+
+    with open(f"saved_params/params_heat_initial_dump_{domain_type}", "wb") as f:
+        pickle.dump(params, f)
+
+    print("Error after fitting:",
+          jnp.sqrt(domain_volume / n_plot_points) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
+
+   
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
-                                           initial_condition, quad_type='simpson')
+                                           initial_condition, domain_type=domain_type, quad_type='simpson')
     init_fit.integrate(N, 1)
     print("Third done")
 
@@ -127,11 +168,11 @@ def initial_cond_learn(resolution_quad=20, eps=1e-2, N=200):
     learned_f = nn_forward(params, xx_plot).block_until_ready()
 
 
-    with open("saved_params/params_heat_initial_dump", "wb") as f:
+    with open(f"saved_params/params_heat_initial_dump_{domain_type}", "wb") as f:
         pickle.dump(params, f)
 
     print("Error after fitting:",
-          2*jnp.pi / resolution_plot * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
+          jnp.sqrt(domain_volume / n_plot_points) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
 
     plt.pcolormesh(*grid_plot, (initial_condition(xx_plot) - learned_f).reshape((resolution_plot, resolution_plot)), shading='auto', cmap="viridis")
     plt.colorbar()
@@ -240,5 +281,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    convergence_analysis(1) # here alpha = 1
-    #initial_cond_learn()
+    #convergence_analysis(1) # here alpha = 1
+    initial_cond_learn(domain_type="L")

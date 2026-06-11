@@ -4,8 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax import jit, vmap, lax
 from abc import ABC, abstractmethod
-
-
+import ipdb
+from l_domain_utils import l_shape_quadrature, l_weights_1d, square_rule
 
 class Integrator(ABC):
     # vertices: Vertices of cubic domain that we are working on.
@@ -15,13 +15,18 @@ class Integrator(ABC):
     # params: parameters of the Neural Network.
     # NN: the architecture of the Neural Network. It provides a .forward method which takes parameters and xx-input.
     # quad_type: "trapezoid" or "simpson"
-    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, quad_type="trapezoid"):
+    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, domain_type="L", quad_type="trapezoid"):
         self.params = params
         self.forward = forward
-
-        self.dimension = len(vertices[0])
-        self.volume = jnp.abs((vertices[1][0]-vertices[0][0]))**self.dimension
-
+        self.domain_type = domain_type
+        if self.domain_type == "square":
+            self.dimension = len(vertices[0])
+            self.volume = jnp.abs((vertices[1][0]-vertices[0][0]))**self.dimension
+        elif self.domain_type == "L":
+            self.dimension = 2
+            self.volume = 3.0/4*(2*jnp.pi)**2
+        else:
+            raise ValueError("Domain has to be either square or L")
         # Initialise domain grid for plot:
         self.xx_plot = xx_plot
         self.M_plot = xx_plot.shape[1]
@@ -32,25 +37,42 @@ class Integrator(ABC):
         # ADDITIONALLY the midpoint for each adjacent "primary" nodes.
         self.resolution_quad = resolution_quad
 
+        # quad mesh buildin: square case
         self.num_eval_points_1_axis = {"trapezoid":resolution_quad, "simpson":2*resolution_quad-1}
-        axes_quad = [jnp.linspace(vertices[0][i], vertices[1][i], self.num_eval_points_1_axis[quad_type]) for i in range(self.dimension)]
-        grid_quad = jnp.meshgrid(*axes_quad)
-        self.xx_quad = jnp.stack([g.ravel() for g in grid_quad])
-        self.M_quad = resolution_quad**self.dimension
-
-        assert(self.dimension == 2)
+        if self.domain_type == "square":
+            axes_quad = [jnp.linspace(vertices[0][i], vertices[1][i], self.num_eval_points_1_axis[quad_type]) for i in range(self.dimension)]
+            grid_quad = jnp.meshgrid(*axes_quad)
+            self.xx_quad = jnp.stack([g.ravel() for g in grid_quad])
+            self.M_quad = resolution_quad**self.dimension
+        elif self.domain_type == "L":
+            self.xx_quad, weights_l = l_shape_quadrature(self.num_eval_points_1_axis[quad_type], quad_type)
+            self.M_quad = 3*self.resolution_quad**2-2*self.resolution_quad
+        #assert(self.dimension == 2)
         # Boolean mask which gives all elements corresponding to the vertices from xx_quad
-        self.vertices_mask = jnp.all(jnp.logical_or(self.xx_quad == vertices[0].reshape(2, 1),
+        if self.domain_type == "square":
+            self.vertices_mask = jnp.all(jnp.logical_or(self.xx_quad == vertices[0].reshape(2, 1),
+                                                        self.xx_quad == vertices[1].reshape(2, 1)), axis=0)
+
+            # Boolean mask which gives all elements corresponding to the border from xx_quad
+            self.border_mask = jnp.any(jnp.logical_or(self.xx_quad == vertices[0].reshape(2, 1),
                                                     self.xx_quad == vertices[1].reshape(2, 1)), axis=0)
+        elif self.domain_type == "L":
+            pi = jnp.pi
+            x, y = self.xx_quad[0], self.xx_quad[1]
 
-        # Boolean mask which gives all elements corresponding to the border from xx_quad
-        self.border_mask = jnp.any(jnp.logical_or(self.xx_quad == vertices[0].reshape(2, 1),
-                                                  self.xx_quad == vertices[1].reshape(2, 1)), axis=0)
+            # --- border: outer square edges + the two reentrant edges ---
+            on_outer = (jnp.abs(x) == pi) | (jnp.abs(y) == pi)
+            on_reentrant = ((x == 0.0) & (y >= 0.0)) | ((y == 0.0) & (x >= 0.0))
+            self.border_mask = on_outer | on_reentrant
 
-        # self.quad_weights_interior = (jnp.where(self.border_mask, 0.5, 1.0)
-        #                             * jnp.where(self.vertices_mask, 0.5, 1)).reshape(-1, 1)
-
-
+            # --- vertices: the 6 corners of the L (incl. the reentrant corner (0,0)) ---
+            corners = jnp.array([[-pi, -pi], [ pi, -pi], [ pi, 0.0],
+                                [ 0.0, 0.0], [ 0.0,  pi], [-pi,  pi]])      # (6, 2)
+            self.vertices_mask = jnp.any(
+                jnp.all(self.xx_quad[:, None, :] == corners.T[:, :, None], axis=0),
+                axis=0,
+            )   # shape (M,)      # self.quad_weights_interior = (jnp.where(self.border_mask, 0.5, 1.0)
+                    #                             * jnp.where(self.vertices_mask, 0.5, 1)).reshape(-1, 1)
         if quad_type == "trapezoid":
             weights_1d = jnp.ones(resolution_quad).at[jnp.array([0,-1])].set(0.5).reshape(-1, 1)
         elif quad_type == "simpson":
@@ -58,7 +80,10 @@ class Integrator(ABC):
         else:
             raise ValueError("quad_type must be trapezoid or simpson")
 
-        self.quad_weights_interior = (weights_1d * weights_1d.T).ravel().reshape(-1, 1)
+        if self.domain_type == "square":
+            self.quad_weights_interior = (weights_1d * weights_1d.T).ravel().reshape(-1, 1)
+        elif self.domain_type == "L":
+            self.quad_weights_interior = weights_l.reshape(-1,1)
 
         self.params0 = params
         self.reg_eps = reg_eps
@@ -82,7 +107,7 @@ class Integrator(ABC):
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
             self.params = step(self.params)# .block_until_ready()
-            if i % 100 == 0:
+            if i % 20 == 0:
                  print(f"integration step {i}")
             if return_values and (i+1)%save_interval == 0:
                 saved_p[:,(i+1)//save_interval-1]= self.params.ravel()
@@ -91,9 +116,9 @@ class Integrator(ABC):
             return err_estimate, saved_p
         return err_estimate
 class IntegratorFittingInitialRK4(Integrator):
-    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, target_function, quad_type="trapezoid"):
+    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, target_function, domain_type="square", quad_type="trapezoid"):
         self.target_function = target_function
-        super().__init__(vertices, xx_plot, resolution_quad, params, forward, reg_eps, quad_type)
+        super().__init__(vertices, xx_plot, resolution_quad, params, forward, reg_eps, domain_type, quad_type)
 
 
     def make_step(self, tau):
@@ -134,7 +159,7 @@ class IntegratorFittingInitialRK4(Integrator):
         return jit(step)
 
 class ImplicitHeat2D(Integrator):
-    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, gauss_iter_steps, lambda_dampening=0, quad_type="trapezoid", alpha=1):
+    def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, gauss_iter_steps, lambda_dampening=0, domain_type="square", quad_type="trapezoid", alpha=1):
         self.gauss_iter_steps = gauss_iter_steps
         self.lambda_dampening = lambda_dampening
 
@@ -142,14 +167,26 @@ class ImplicitHeat2D(Integrator):
             raise ValueError("dimension must be 2")
 
         self.one_border_volume = jnp.abs(vertices[1][0] - vertices[0][0])
-        super().__init__(vertices, xx_plot, resolution_quad, params, forward, reg_eps, quad_type)
+        super().__init__(vertices, xx_plot, resolution_quad, params, forward, reg_eps, domain_type, quad_type)
 
         # Boolean mask which gives the position of the points corresponding to given axis **in border_mask**
         # i.e. xx_quad[:,border_mask][:,border_axes_mask[0]] gives all the quad points corresponding to the edges
         # parallel to the x-axis
-        self.border_axes_mask = [jnp.logical_or(self.xx_quad[i, self.border_mask] == vertices[0][i],
-                                                self.xx_quad[i, self.border_mask] == vertices[1][i])
-                                 for i in range(self.dimension-1,-1,-1)]
+        if domain_type == "square":
+            self.border_axes_mask = [jnp.logical_or(self.xx_quad[i, self.border_mask] == vertices[0][i],
+                                                    self.xx_quad[i, self.border_mask] == vertices[1][i])
+                                    for i in range(self.dimension-1,-1,-1)]
+        else:
+            pi = jnp.pi
+            xb = self.xx_quad[:, self.border_mask]      # (2, n_border) border nodes only
+
+            def _on_const_coord_edges(axis):
+                """Border nodes lying on an edge where coordinate `axis` is constant."""
+                c, other = xb[axis], xb[1 - axis]
+                return (c == -pi) | (c == pi) | ((c == 0.0) & (other >= 0.0))
+
+            self.border_axes_mask = [_on_const_coord_edges(i)
+                                    for i in range(self.dimension - 1, -1, -1)]
 
         if quad_type == "trapezoid":
             self.qw_coeff = 2
