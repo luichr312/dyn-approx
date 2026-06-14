@@ -251,7 +251,6 @@ class ImplicitHeat2D(Integrator):
                      + (self.quad_weights_border[1].T * eval_dx_border_stage[self.border_axes_mask[1], 1])
                      @ eval_dparam_dx_border[self.border_axes_mask[1], 1, :, 0]).T)
             #h1_semi_contribution = 0*h1_semi_contribution
-            debug.breakpoint()
             return l2_contribution + h1_semi_contribution
 
         def step(params):
@@ -290,8 +289,6 @@ class ImplicitHeat2D(Integrator):
             #    lambda _: None,
             #    operand=None
             #)
-            
-            #debug.breakpoint()
             #c, low = jax.scipy.linalg.cho_factor(system_matrix)
             params0 = params
 
@@ -340,22 +337,10 @@ class ImplicitHeat2D(Integrator):
                 rhs_border = rhs_border_stage - rhs_border_0_lambda
 
                 # NOTE: changed
-                rhs_reg =  1 / 2.0 * self.reg_eps ** 2 *(params - params0)
+                rhs_reg =  1 / 2.0 * self.reg_eps ** 2 / tau ** 2 *(params - params0)
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
-                #p_update = jnp.linalg.solve(system_matrix, rhs)
-                # NOTE: try lstsq later
                 p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]
-                #if jnp.any(jnp.isnan(p_update)):
-                #    debug.print("Fucked update {x}", x=p_update, ordered=True)
-                #p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
                 params = params + p_update
-                jax.lax.cond(
-                    jnp.linalg.norm(p_update) < 1e-10,
-                    lambda _: debug.print("p_update: {x}", x=p_update),
-                    lambda _: None,
-                    operand=None
-                )
-
             #delta_sq = 0
             #params, delta_sq = lax.fori_loop(0, self.gauss_iter_steps, loop_body, (params, delta_sq))
 

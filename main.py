@@ -96,7 +96,7 @@ def solve_heat_2d_dirichlet_bc(domain_type="square"):
     plt.show()
 
 
-def initial_cond_learn(domain_type="L", resolution_quad=3, eps=1e-2, N=200):
+def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
     resolution_plot = 50
     dim = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
@@ -121,7 +121,7 @@ def initial_cond_learn(domain_type="L", resolution_quad=3, eps=1e-2, N=200):
     #xx_plot_np = np.array(xx_plot)
     # _ = nn_forward(params, xx_plot)
 
-    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=2)
+    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=10000)
     eps = 0.00001
 
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
@@ -184,8 +184,8 @@ def convergence_analysis(alpha, domain_type="square"):
     EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
-    resolution_plot = 3
-    resolution_quad = 3
+    resolution_plot = 20
+    resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     if domain_type == "square":
@@ -198,10 +198,10 @@ def convergence_analysis(alpha, domain_type="square"):
         xx_plot, _ = l_shape_quadrature(resolution_plot, quad_type="simpson")
    
     gauss_steps = 20
-    lambda_damp = 1
+    lambda_damp = 0.0
 
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
+    nn_forward, param_count = make_forward_dirichlet_bc(d, 8)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
@@ -215,15 +215,27 @@ def convergence_analysis(alpha, domain_type="square"):
     # init_fit.integrate(100, 1)
 
     #params = init_fit.params
-    if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
-        with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
-            params = pickle.load(f)
-    else:
-        raise ValueError('params_heat_initial_now.pickle does not exist')
+    if domain_type == "square":
+        if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
+            with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
+                params = pickle.load(f)
+        else:
+            raise ValueError('params_heat_initial_now.pickle does not exist')
+    elif domain_type == "L":
+        if os.path.exists('saved_params/params_heat_initial_dump_L'):
+            with open('saved_params/params_heat_initial_dump_L', 'rb') as f:
+                params = pickle.load(f)
+        else:
+            raise ValueError('params_heat_initial_dump_L does not exist')
+    
+    learned_f = nn_forward(params, xx_plot).ravel()
+    if  domain_type == "square":
+        volume = 4*jnp.pi**2
+        n_plot_points = resolution_plot**2
+    elif domain_type == "L":
+        volume = 3*jnp.pi**2
+        n_plot_points = 3*resolution_plot**2 - 2*resolution_plot
 
-    learned_f = nn_forward(params, xx_plot)
-    volume = 3*jnp.pi**2
-    n_plot_points = 3*resolution_plot**2 - 2*resolution_plot
     print("Error after fitting:",
           jnp.sqrt(volume/n_plot_points) * jnp.linalg.norm(learned_f - initial_condition(xx_plot)))
 
@@ -288,5 +300,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    convergence_analysis(1,domain_type="square") # here alpha = 1
-    #initial_cond_learn(domain_type="square")
+    convergence_analysis(1,domain_type="L") # here alpha = 1
+   # initial_cond_learn(domain_type="L")
