@@ -5,7 +5,7 @@ import numpy as np
 from jax import jit, vmap, lax
 from abc import ABC, abstractmethod
 import ipdb
-from l_domain_utils import l_shape_quadrature, l_weights_1d, square_rule
+from l_domain_utils import l_shape_quadrature, l_weights_1d, square_rule, l_border_weights
 
 class Integrator(ABC):
     # vertices: Vertices of cubic domain that we are working on.
@@ -84,6 +84,7 @@ class Integrator(ABC):
             self.quad_weights_interior = (weights_1d * weights_1d.T).ravel().reshape(-1, 1)
         elif self.domain_type == "L":
             self.quad_weights_interior = weights_l.reshape(-1,1)
+
 
         self.params0 = params
         self.reg_eps = reg_eps
@@ -187,6 +188,7 @@ class ImplicitHeat2D(Integrator):
 
             self.border_axes_mask = [_on_const_coord_edges(i)
                                     for i in range(self.dimension - 1, -1, -1)]
+                                    
 
         if quad_type == "trapezoid":
             self.qw_coeff = 2
@@ -194,12 +196,28 @@ class ImplicitHeat2D(Integrator):
             self.qw_coeff = 6
         else:
             raise ValueError("quad_type must be trapezoid or simpson")
+        if self.domain_type == "square":
 
-        self.quad_weights_border = [self.qw_coeff * self.quad_weights_interior[self.border_mask][self.border_axes_mask[i]]
-                                    for i in range(self.dimension)]
+            self.quad_weights_border = [self.qw_coeff * self.quad_weights_interior[self.border_mask][self.border_axes_mask[i]]
+                                        for i in range(self.dimension)]
 
-        self.quad_weights_border_periodic = (jnp.where(self.vertices_mask[self.border_mask], 2, 1).reshape(-1, 1)
-                                        *self.qw_coeff * self.quad_weights_interior[self.border_mask])
+            self.quad_weights_border_periodic = (jnp.where(self.vertices_mask[self.border_mask], 2, 1).reshape(-1, 1)
+                                            *self.qw_coeff * self.quad_weights_interior[self.border_mask])
+        elif self.domain_type == "L":
+            self.quad_weights_border = [self.qw_coeff * self.quad_weights_interior[self.border_mask][self.border_axes_mask[i]]
+                                        for i in range(self.dimension)]
+
+            self.quad_weights_border_periodic = (jnp.where(self.vertices_mask[self.border_mask], 2, 1).reshape(-1, 1)
+                                            *self.qw_coeff * self.quad_weights_interior[self.border_mask])
+            
+            # fixing the weight at the inner reentrant corner
+            self.quad_weights_border[0] = jnp.where(self.quad_weights_border[0]==3/6.0, 1.0, self.quad_weights_border[0]) 
+            self.quad_weights_border[1] = jnp.where(self.quad_weights_border[1]==3/6.0, 1.0, self.quad_weights_border[1])
+
+            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0, self.quad_weights_border_periodic) 
+            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0, self.quad_weights_border_periodic)
+
+
         self.h = self.one_border_volume / (resolution_quad-1)
         self.h_squared = self.h * self.h
         self.alpha = alpha
@@ -241,7 +259,8 @@ class ImplicitHeat2D(Integrator):
             eval_dparam = 1/tau*jnp.squeeze(jax.jacobian(self.forward)(params, self.xx_quad))
             # This is our matrix A evaluated at the inner quad points.
             eval_impl_euler = eval_dparam - jnp.squeeze(jax.jacobian(laplacian_x_forward)(params, self.xx_quad))
-            #debug.breakpoint()
+
+
             sys_l2_interior = self.h_squared * eval_impl_euler.T @ (self.quad_weights_interior * eval_impl_euler)
             eval_dparam_border = eval_dparam[self.border_mask, :]
             sys_l2_border = (self.h * eval_dparam_border.T @(self.quad_weights_border_periodic * eval_dparam_border))
@@ -261,8 +280,8 @@ class ImplicitHeat2D(Integrator):
 
             #sys_h1_border = 0*sys_h1_border
 
-            system_matrix = (tau**2*sys_l2_interior + sys_l2_border + sys_h1_border
-                             + 3/2.0*self.reg_eps**2*jnp.eye(sys_h1_border.shape[0]))
+            system_matrix = (sys_l2_interior + sys_l2_border + sys_h1_border
+                             + 3/2.0*self.reg_eps**2/tau**2*jnp.eye(sys_h1_border.shape[0]))
             
             #cond = jnp.linalg.cond(system_matrix)
             #jax.lax.cond(
@@ -322,7 +341,7 @@ class ImplicitHeat2D(Integrator):
 
                 # NOTE: changed
                 rhs_reg =  1 / 2.0 * self.reg_eps ** 2 *(params - params0)
-                rhs = -tau**2*rhs_l2_interior - rhs_border - rhs_reg
+                rhs = -rhs_l2_interior - rhs_border - rhs_reg
                 #p_update = jnp.linalg.solve(system_matrix, rhs)
                 # NOTE: try lstsq later
                 p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]

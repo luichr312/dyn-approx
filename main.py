@@ -96,7 +96,7 @@ def solve_heat_2d_dirichlet_bc(domain_type="square"):
     plt.show()
 
 
-def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
+def initial_cond_learn(domain_type="L", resolution_quad=3, eps=1e-2, N=200):
     resolution_plot = 50
     dim = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
@@ -121,8 +121,8 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
     #xx_plot_np = np.array(xx_plot)
     # _ = nn_forward(params, xx_plot)
 
-    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=10000)
-    eps = 0.0001
+    params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=2)
+    eps = 0.00001
 
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
                                            initial_condition, domain_type=domain_type, quad_type='simpson')
@@ -184,8 +184,8 @@ def convergence_analysis(alpha, domain_type="square"):
     EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
-    resolution_plot = 50
-    resolution_quad = 10
+    resolution_plot = 3
+    resolution_quad = 3
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     if domain_type == "square":
@@ -288,5 +288,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    convergence_analysis(1,domain_type="L") # here alpha = 1
-    #initial_cond_learn(domain_type="L")
+    convergence_analysis(1,domain_type="square") # here alpha = 1
+    #initial_cond_learn(domain_type="square")
