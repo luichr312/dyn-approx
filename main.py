@@ -180,8 +180,8 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
 
 
 def convergence_analysis(alpha, domain_type="square"):
-    N = 2 ** np.arange(7, 12)
-    EPS = [0.0001]
+    N = 2 ** np.arange(5, 12)
+    EPS = [0.01]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 20
@@ -300,5 +300,5 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    convergence_analysis(1,domain_type="L") # here alpha = 1
-   # initial_cond_learn(domain_type="L")
+    convergence_analysis(0.5,domain_type="L") # here alpha = 1
+    #initial_cond_learn(domain_type="L")

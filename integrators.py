@@ -209,16 +209,19 @@ class ImplicitHeat2D(Integrator):
 
             self.quad_weights_border_periodic = (jnp.where(self.vertices_mask[self.border_mask], 2, 1).reshape(-1, 1)
                                             *self.qw_coeff * self.quad_weights_interior[self.border_mask])
-            
+
             # fixing the weight at the inner reentrant corner
-            self.quad_weights_border[0] = jnp.where(self.quad_weights_border[0]==3/6.0, 1.0, self.quad_weights_border[0]) 
-            self.quad_weights_border[1] = jnp.where(self.quad_weights_border[1]==3/6.0, 1.0, self.quad_weights_border[1])
+            self.quad_weights_border[0] = jnp.where(self.quad_weights_border[0]==3/6.0, 1.0/6.0, self.quad_weights_border[0]) 
+            self.quad_weights_border[1] = jnp.where(self.quad_weights_border[1]==3/6.0, 1.0/6.0, self.quad_weights_border[1])
 
-            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0, self.quad_weights_border_periodic) 
-            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0, self.quad_weights_border_periodic)
+            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0/6.0, self.quad_weights_border_periodic) 
+            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0/6.0, self.quad_weights_border_periodic)
 
 
-        self.h = self.one_border_volume / (resolution_quad-1)
+        if self.domain_type == "square":
+            self.h = self.one_border_volume / (resolution_quad-1)
+        elif self.domain_type == "L":
+            self.h = self.one_border_volume / (2.0*(resolution_quad-1))
         self.h_squared = self.h * self.h
         self.alpha = alpha
 
