@@ -96,7 +96,7 @@ def solve_heat_2d_dirichlet_bc(domain_type="square"):
     plt.show()
 
 
-def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
+def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-5, N=200):
     resolution_plot = 50
     dim = 2
     vertices = jnp.array([[-jnp.pi,-jnp.pi], [jnp.pi,jnp.pi]])
@@ -113,7 +113,7 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
         raise ValueError("Domain has to be either square or L")
         
     
-    nn_forward, param_count = make_forward_dirichlet_bc(dim, 8)
+    nn_forward, param_count = make_forward_dirichlet_bc(dim,6)
     key = random.PRNGKey(0)
 
     # DATA TYPE!!!!
@@ -180,8 +180,8 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-2, N=200):
 
 
 def convergence_analysis(alpha, domain_type="square"):
-    N = 2 ** np.arange(5, 12)
-    EPS = [0.01]
+    N = 2 ** np.arange(5, 10)
+    EPS = [0.1, 0.01, 0.001, 0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 20
@@ -201,7 +201,7 @@ def convergence_analysis(alpha, domain_type="square"):
     lambda_damp = 0.0
 
 
-    nn_forward, param_count = make_forward_dirichlet_bc(d, 8)
+    nn_forward, param_count = make_forward_dirichlet_bc(d, 6)
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
@@ -252,7 +252,7 @@ def convergence_analysis(alpha, domain_type="square"):
             err[e,n] = jnp.sqrt(volume/n_plot_points) * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T, domain_type=domain_type))
 
             print(f"Error: {err}")
-        scipy.io.savemat(f'error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat', {
+        scipy.io.savemat(f'error_mats/errors_heat_lambda{lambda_damp}_inicond_hs6_3e-5_alpha{alpha}_{domain_type}_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat', {
             'errors': err[:e + 1, :],
             'errors_est': err_estimate[:e + 1, :],
             'N_s': N
