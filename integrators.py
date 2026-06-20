@@ -44,9 +44,11 @@ class Integrator(ABC):
             grid_quad = jnp.meshgrid(*axes_quad)
             self.xx_quad = jnp.stack([g.ravel() for g in grid_quad])
             self.M_quad = resolution_quad**self.dimension
+
         elif self.domain_type == "L":
             self.xx_quad, weights_l = l_shape_quadrature(self.num_eval_points_1_axis[quad_type], quad_type)
             self.M_quad = 3*self.resolution_quad**2-2*self.resolution_quad
+
         #assert(self.dimension == 2)
         # Boolean mask which gives all elements corresponding to the vertices from xx_quad
         if self.domain_type == "square":
@@ -93,12 +95,12 @@ class Integrator(ABC):
     def make_step(self, time_step):
         pass
 
-    def integrate(self, steps, time_bound, return_values=False, save_frames=4):
+    def integrate(self, steps, time_bound,  init_cond=True, return_values=False, save_frames=4):
         err_estimate = 0
         if return_values:
             # Set up array in which the results of the integration will be returned
             saved_p = np.zeros((self.params.shape[0], save_frames))
-
+            dsq_hist = np.zeros((steps,))
         tau = time_bound*1.0/steps
         step = self.make_step(tau)
         save_interval = steps//save_frames
@@ -107,14 +109,21 @@ class Integrator(ABC):
             raise ValueError("save_frames must be compatible with number of steps")
         for i in range(0, steps):
             #   with jax.profiler.TraceAnnotation("integration_step", step_num=i):
-            self.params = step(self.params)# .block_until_ready()
+            if not init_cond:
+                self.params, dsq = step(self.params)# .block_until_ready()
+            else:
+                self.params = step(self.params)# .block_until_ready()
             if i % 20 == 0:
                  print(f"integration step {i}")
             if return_values and (i+1)%save_interval == 0:
                 saved_p[:,(i+1)//save_interval-1]= self.params.ravel()
-
+            if not init_cond:
+                dsq_hist[i] = dsq.item()
         if return_values:
-            return err_estimate, saved_p
+            if not init_cond:
+                return err_estimate, saved_p, dsq_hist
+            else:
+                return err_estimate, saved_p
         return err_estimate
 class IntegratorFittingInitialRK4(Integrator):
     def __init__(self, vertices, xx_plot, resolution_quad, params, forward, reg_eps, target_function, domain_type="square", quad_type="trapezoid"):
@@ -184,6 +193,7 @@ class ImplicitHeat2D(Integrator):
             def _on_const_coord_edges(axis):
                 """Border nodes lying on an edge where coordinate `axis` is constant."""
                 c, other = xb[axis], xb[1 - axis]
+
                 return (c == -pi) | (c == pi) | ((c == 0.0) & (other >= 0.0))
 
             self.border_axes_mask = [_on_const_coord_edges(i)
@@ -214,14 +224,13 @@ class ImplicitHeat2D(Integrator):
             self.quad_weights_border[0] = jnp.where(self.quad_weights_border[0]==3/6.0, 1.0/6.0, self.quad_weights_border[0]) 
             self.quad_weights_border[1] = jnp.where(self.quad_weights_border[1]==3/6.0, 1.0/6.0, self.quad_weights_border[1])
 
-            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0/6.0, self.quad_weights_border_periodic) 
-            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==3/6.0, 2.0/6.0, self.quad_weights_border_periodic)
+            self.quad_weights_border_periodic = jnp.where(self.quad_weights_border_periodic==1.0, 2.0/6.0, self.quad_weights_border_periodic) 
 
 
         if self.domain_type == "square":
             self.h = self.one_border_volume / (resolution_quad-1)
         elif self.domain_type == "L":
-            self.h = self.one_border_volume / (2.0*(resolution_quad-1))
+            self.h = self.one_border_volume / (2*(resolution_quad-1))
         self.h_squared = self.h * self.h
         self.alpha = alpha
 
@@ -254,7 +263,7 @@ class ImplicitHeat2D(Integrator):
                      + (self.quad_weights_border[1].T * eval_dx_border_stage[self.border_axes_mask[1], 1])
                      @ eval_dparam_dx_border[self.border_axes_mask[1], 1, :, 0]).T)
             #h1_semi_contribution = 0*h1_semi_contribution
-            return l2_contribution + h1_semi_contribution
+            return l2_contribution + h1_semi_contribution, eval_border_stage, eval_dx_border_stage
 
         def step(params):
 
@@ -285,6 +294,7 @@ class ImplicitHeat2D(Integrator):
             system_matrix = (sys_l2_interior + sys_l2_border + sys_h1_border
                              + 3/2.0*self.reg_eps**2/tau**2*jnp.eye(sys_h1_border.shape[0]))
             
+
             #cond = jnp.linalg.cond(system_matrix)
             #jax.lax.cond(
             #    cond > 1e10,
@@ -292,10 +302,12 @@ class ImplicitHeat2D(Integrator):
             #    lambda _: None,
             #    operand=None
             #)
-            #c, low = jax.scipy.linalg.cho_factor(system_matrix)
+            c, low = jax.scipy.linalg.cho_factor(system_matrix)
             params0 = params
+            
+            h1_part, _, _ = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
+            rhs_border_0_lambda = self.lambda_dampening*h1_part
 
-            rhs_border_0_lambda = self.lambda_dampening*rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
 
             # FIRST ITERATION JUST HAS RHS 0? NO! ALMOST...
             # Consider removing lax.fori_loop and just use regular python loop. XLA optimising not as aggressive inside
@@ -316,18 +328,19 @@ class ImplicitHeat2D(Integrator):
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
                 p_update = jax.scipy.linalg.cho_solve((c,low), rhs)
 
-                # def compute_dsq():
-                #     d = 1.0 / self.M_quad* self.volume * jnp.sum(((eval_impl_euler @ p_update).T + rhs_eval_l2_interior) ** 2)
-                #     d += jnp.sum(p_update** 2)  * self.reg_eps ** 2 / tau ** 2
-                #     d += jnp.sum((params - params0 + p_update)**2) * 1 / 2 * self.reg_eps ** 2 / tau ** 2
-                #     
-                ##     missing H1 stuff....
-                #     
-                #     return 0
-                # dsq = lax.cond(i == self.gauss_iter_steps-1, lambda _: compute_dsq(), lambda _: dsq, None)
+                def compute_dsq():
+                    d = 1.0 / self.M_quad* self.volume * jnp.sum(((eval_impl_euler @ p_update).T + rhs_eval_l2_interior) ** 2)
+                    d += jnp.sum(p_update** 2)  * self.reg_eps ** 2 / tau ** 2
+                    d += jnp.sum((params - params0 + p_update)**2) * 1 / 2 * self.reg_eps ** 2 / tau ** 2
+                     
+                     missing H1 stuff....
+                     
+                    return 0
+                dsq = lax.cond(i == self.gauss_iter_steps-1, lambda _: compute_dsq(), lambda _: dsq, None)
                 return params + p_update, dsq
 
         '''
+            dsq = 0.0
             for k in range(self.gauss_iter_steps):
                 diff_quot = 1 / tau * (self.forward(params, self.xx_quad) - self.forward(params0, self.xx_quad))
                 # THIS DOESN'T NEED TO BE COMPUTED ON FIRST PASS
@@ -336,18 +349,36 @@ class ImplicitHeat2D(Integrator):
                 rhs_l2_interior = self.h_squared * (
                             (self.quad_weights_interior.T * rhs_eval_l2_interior) @ eval_impl_euler).T
 
-                rhs_border_stage = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params)
+                rhs_border_stage, eval_border_stage, eval_dx_border_stage = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params)
                 rhs_border = rhs_border_stage - rhs_border_0_lambda
 
                 # NOTE: changed
                 rhs_reg =  1 / 2.0 * self.reg_eps ** 2 / tau ** 2 *(params - params0)
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
-                p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]
+                p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
+                #p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]
                 params = params + p_update
+                
+                # computing delta squared
+                if k == self.gauss_iter_steps-1:
+                    dsq = self.h_squared*jnp.sum(self.quad_weights_interior.T*((eval_impl_euler @ p_update).T + rhs_eval_l2_interior) ** 2)
+                    dsq += jnp.sum(p_update** 2)  * self.reg_eps ** 2 / tau ** 2
+                    dsq += jnp.sum((params - params0 + p_update)**2) * 1 / 2 * self.reg_eps ** 2 / tau ** 2
+                    dsq += jnp.sum(self.h*self.quad_weights_border_periodic.T*((eval_dparam_border@p_update/tau).T+eval_border_stage)**2)
+                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[0].T*((eval_dparam_dx_border[self.border_axes_mask[0],0,:,0]@p_update/tau).T+ eval_dx_border_stage[self.border_axes_mask[0], 0].reshape(1,-1))**2)
+                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[1].T*((eval_dparam_dx_border[self.border_axes_mask[1],1,:,0]@p_update/tau).T+ eval_dx_border_stage[self.border_axes_mask[1], 1].reshape(1,-1))**2)
+                                    
+                #n = jnp.linalg.norm(p_update)
+                #jax.lax.cond(
+                #    n < 1e-9,
+                #    lambda _: debug.print("{y} step: p_update: {x}",y=self.gauss_iter_steps, x=n),
+                #    lambda _: None,
+                #    operand=None
+                #)
             #delta_sq = 0
             #params, delta_sq = lax.fori_loop(0, self.gauss_iter_steps, loop_body, (params, delta_sq))
 
-            return params
+            return params, dsq
         #return step
         return jit(step)
 

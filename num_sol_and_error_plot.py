@@ -7,7 +7,7 @@ import os, pickle
 from scipy.io import loadmat
 from matplotlib.colors import Normalize
 
-SAVE = False
+SAVE = True
 alpha = 0
 quad = 10
 quad_type = 'simpson'

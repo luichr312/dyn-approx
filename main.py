@@ -117,16 +117,16 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-5, N=200):
     key = random.PRNGKey(0)
 
     # DATA TYPE!!!!
-    params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float32))
+    params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
     #xx_plot_np = np.array(xx_plot)
     # _ = nn_forward(params, xx_plot)
 
     params = train_model_classic(nn_forward, params, xx_plot, initial_condition, epochs=10000)
-    eps = 0.00001
+    eps = 0.0001
 
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, eps,
                                            initial_condition, domain_type=domain_type, quad_type='simpson')
-    init_fit.integrate(N, 1)
+    init_fit.integrate(N, 1, init_cond=True)
     params = init_fit.params
     learned_f = nn_forward(params, xx_plot).block_until_ready()
 
@@ -145,7 +145,7 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-5, N=200):
     eps = 0.00001
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
                                            initial_condition, domain_type=domain_type, quad_type='simpson')
-    init_fit.integrate(N, 1)
+    init_fit.integrate(N, 1, init_cond=True)
     
     print("Second done")
     params = init_fit.params
@@ -161,7 +161,12 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-5, N=200):
    
     init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
                                            initial_condition, domain_type=domain_type, quad_type='simpson')
-    init_fit.integrate(N, 1)
+    init_fit.integrate(N, 1, init_cond=True)
+    print("Third done")
+
+    init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, eps,
+                                           initial_condition, domain_type=domain_type, quad_type='simpson')
+    init_fit.integrate(N, 1, init_cond=True)
     print("Third done")
 
     params = init_fit.params
@@ -180,14 +185,16 @@ def initial_cond_learn(domain_type="L", resolution_quad=10, eps=1e-5, N=200):
 
 
 def convergence_analysis(alpha, domain_type="square"):
-    N = 2 ** np.arange(5, 10)
-    EPS = [0.1, 0.01, 0.001, 0.0001]
+    N = 2**np.arange(9,12)
+    EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_plot = 20
-    resolution_quad = 10
+    resolution_quad = 5
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
+    print(f"Using {domain_type}-shaped domain and alpha = {alpha}.")
+
     if domain_type == "square":
         initial_condition = heat_initial_condition_square
         axes_plot = [jnp.linspace(vertices[0][i], vertices[1][i], resolution_plot) for i in range(d)]
@@ -197,7 +204,7 @@ def convergence_analysis(alpha, domain_type="square"):
         initial_condition = heat_initial_condition_L
         xx_plot, _ = l_shape_quadrature(resolution_plot, quad_type="simpson")
    
-    gauss_steps = 20
+    gauss_steps = 3
     lambda_damp = 0.0
 
 
@@ -205,16 +212,6 @@ def convergence_analysis(alpha, domain_type="square"):
     key = random.PRNGKey(0)
     params = jnp.array(random.normal(key, (param_count, 1), dtype=jnp.float64))
 
-    # init_fit_eps = 1e-4
-    # params = train_model_classic(nn_forward, params, xx_plot, initial_condition)
-    # init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, params, nn_forward, init_fit_eps,
-    #                                        initial_condition)
-    # init_fit.integrate(100, 1)
-    # init_fit = IntegratorFittingInitialRK4(vertices, xx_plot, resolution_quad, init_fit.params, nn_forward, init_fit_eps,
-    #                                        initial_condition)
-    # init_fit.integrate(100, 1)
-
-    #params = init_fit.params
     if domain_type == "square":
         if os.path.exists('saved_params/params_heat_initial_hs6_3e-5.pickle'):
             with open('saved_params/params_heat_initial_hs6_3e-5.pickle', 'rb') as f:
@@ -246,9 +243,81 @@ def convergence_analysis(alpha, domain_type="square"):
             print(f"--- N={N[n]}, eps={EPS[e]}, Mquad={resolution_quad} ---")
             heat_integrator = ImplicitHeat2D(vertices, xx_plot, resolution_quad, params, nn_forward, EPS[e], gauss_steps,
                                              lambda_dampening=lambda_damp, domain_type=domain_type, quad_type='simpson',alpha=alpha)
-            heat_integrator.integrate(N[n], T)
+            _, _, dsq_hist = heat_integrator.integrate(N[n], T,  init_cond=False, return_values=True)
+            # --- PUBLICATION READY PLOT SNIPPET ---
+            # Create a directory to avoid cluttering your root folder
+            os.makedirs("plot_outputs", exist_ok=True)
+            
+            fig, ax = plt.subplots(figsize=(6, 4))
+            
+            # Plot the history
+            ax.plot(np.arange(1, N[n] + 1), jnp.sqrt(dsq_hist), color='tab:blue', linewidth=1.5)
+            
+            # Formatting
+            ax.set_yscale('log')
+            ax.set_xlabel('Time Step', fontsize=12)
+            ax.set_ylabel(r'$\delta^2$ (Loss)', fontsize=12)
+            ax.set_title(r'$\delta^2$ Evolution ($N=%d$, $\epsilon=%g$)' % (N[n], EPS[e]), fontsize=14)
+            
+            # Grid and ticks
+            ax.grid(True, which="major", linestyle="-", alpha=0.6)
+            ax.grid(True, which="minor", linestyle="--", alpha=0.3)
+            ax.tick_params(axis='both', which='major', labelsize=10)
+            
+            plt.tight_layout()
+            
+            # Save the figure as a high-res PDF and PNG
+            file_prefix = f"plot_outputs/dsq_history_eps_{EPS[e]}_N_{N[n]}"
+            #plt.savefig(f"{file_prefix}.pdf", format='pdf', bbox_inches='tight')
+            plt.savefig(f"{file_prefix}.png", dpi=300, bbox_inches='tight')
+            
+            plt.close(fig) # Free memory
+            # --------------------------------------
 
             learned_sol = nn_forward(heat_integrator.params, heat_integrator.xx_plot)
+            # --- PUBLICATION READY L-SHAPE PLOT SNIPPET ---
+            # 1. Create a dense square grid for high-res plotting
+            res_plot = 150
+            x_dense = jnp.linspace(-jnp.pi, jnp.pi, res_plot)
+            y_dense = jnp.linspace(-jnp.pi, jnp.pi, res_plot)
+            X_grid, Y_grid = jnp.meshgrid(x_dense, y_dense)
+            
+            # Flatten to shape (2, N) for the neural network
+            plot_pts = jnp.stack([X_grid.ravel(), Y_grid.ravel()])
+            
+            # 2. Evaluate the trained NN on the full grid
+            Z_pred = nn_forward(heat_integrator.params, plot_pts).reshape(res_plot, res_plot)
+            
+            # 3. Convert to NumPy and mask the reentrant corner (x > 0 and y > 0)
+            Z_plot = np.array(Z_pred)
+            mask_missing_quadrant = (X_grid > 0.0) & (Y_grid > 0.0)
+            Z_plot[mask_missing_quadrant] = np.nan
+            
+            # 4. Generate the Figure
+            fig, ax = plt.subplots(figsize=(6, 5))
+            
+            # pcolormesh gracefully handles the NaN mask
+            mesh = ax.pcolormesh(X_grid, Y_grid, Z_plot, shading='auto', cmap='viridis')
+            
+            # Formatting
+            ax.set_aspect('equal', 'box') # Crucial so the L-shape isn't stretched!
+            ax.set_xlabel('x', fontsize=12)
+            ax.set_ylabel('y', fontsize=12)
+            ax.set_title(r'Final NN Solution ($N=%d$, $\epsilon=%g$)' % (N[n], EPS[e]), fontsize=14)
+            
+            # Colorbar
+            cbar = fig.colorbar(mesh, ax=ax)
+            cbar.set_label('Temperature', fontsize=12)
+            
+            plt.tight_layout()
+            
+            # Save the figure as a high-res PDF and PNG
+            file_prefix = f"plot_outputs/solution_L_shape_eps_{EPS[e]}_N_{N[n]}"
+            #plt.savefig(f"{file_prefix}.pdf", format='pdf', bbox_inches='tight')
+            plt.savefig(f"{file_prefix}.png", dpi=300, bbox_inches='tight')
+            
+            plt.close(fig) # Free memory
+            # ----------------------------------------------
             err[e,n] = jnp.sqrt(volume/n_plot_points) * jnp.linalg.norm(learned_sol - heat_exact_solution(xx_plot, T, domain_type=domain_type))
 
             print(f"Error: {err}")
@@ -259,8 +328,8 @@ def convergence_analysis(alpha, domain_type="square"):
         })
 
 def save_sol(alpha, times=None):
-    N = 2 ** np.arange(4, 15)
-    EPS = [0.01, 0.001, 0.0001]
+    N = 2**np.arange(4, 15)
+    EPS = [0.0001]
     print("N: ", N, "EPS: ", EPS)
     T = 1
     resolution_quad = 10
@@ -300,5 +369,6 @@ def save_sol(alpha, times=None):
 if __name__ == "__main__":
     #save_sol(0)
     #save_sol(0.2)
-    convergence_analysis(0.5,domain_type="L") # here alpha = 1
+    convergence_analysis(0.5,domain_type="L") 
+    # here alpha = 1
     #initial_cond_learn(domain_type="L")
