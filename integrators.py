@@ -95,7 +95,7 @@ class Integrator(ABC):
     def make_step(self, time_step):
         pass
 
-    def integrate(self, steps, time_bound,  init_cond=True, return_values=False, save_frames=4):
+    def integrate(self, steps, time_bound,  init_cond=True, return_values=False, save_frames=1):
         err_estimate = 0
         if return_values:
             # Set up array in which the results of the integration will be returned
@@ -302,7 +302,7 @@ class ImplicitHeat2D(Integrator):
             #    lambda _: None,
             #    operand=None
             #)
-            c, low = jax.scipy.linalg.cho_factor(system_matrix)
+            #c, low = jax.scipy.linalg.cho_factor(system_matrix)
             params0 = params
             
             h1_part, _, _ = rhs_H1_border_helper(eval_dparam_border, eval_dparam_dx_border, params0)
@@ -355,8 +355,10 @@ class ImplicitHeat2D(Integrator):
                 # NOTE: changed
                 rhs_reg =  1 / 2.0 * self.reg_eps ** 2 / tau ** 2 *(params - params0)
                 rhs = -rhs_l2_interior - rhs_border - rhs_reg
-                p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
+                p_update = jnp.linalg.lstsq(system_matrix, rhs)[0].reshape(-1, 1)
+                #p_update = jax.scipy.linalg.cho_solve((c, low), rhs)
                 #p_update = jnp.linalg.lstsq(system_matrix, rhs, rcond=1e-15)[0]
+
                 params = params + p_update
                 
                 # computing delta squared
@@ -364,10 +366,15 @@ class ImplicitHeat2D(Integrator):
                     dsq = self.h_squared*jnp.sum(self.quad_weights_interior.T*((eval_impl_euler @ p_update).T + rhs_eval_l2_interior) ** 2)
                     dsq += jnp.sum(p_update** 2)  * self.reg_eps ** 2 / tau ** 2
                     dsq += jnp.sum((params - params0 + p_update)**2) * 1 / 2 * self.reg_eps ** 2 / tau ** 2
-                    dsq += jnp.sum(self.h*self.quad_weights_border_periodic.T*((eval_dparam_border@p_update/tau).T+eval_border_stage)**2)
-                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[0].T*((eval_dparam_dx_border[self.border_axes_mask[0],0,:,0]@p_update/tau).T+ eval_dx_border_stage[self.border_axes_mask[0], 0].reshape(1,-1))**2)
-                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[1].T*((eval_dparam_dx_border[self.border_axes_mask[1],1,:,0]@p_update/tau).T+ eval_dx_border_stage[self.border_axes_mask[1], 1].reshape(1,-1))**2)
-                                    
+                    
+                    # L^2 component on border
+                    dsq += self.h*jnp.sum(self.quad_weights_border_periodic.T*((eval_dparam_border@p_update).T+eval_border_stage)**2)
+                    
+                    # H^1 component on border
+                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[0].T*((eval_dparam_dx_border[self.border_axes_mask[0],0,:,0]@p_update).T+ eval_dx_border_stage[self.border_axes_mask[0], 0].reshape(1,-1))**2)
+                    dsq += self.alpha*self.h*jnp.sum(self.quad_weights_border[1].T*((eval_dparam_dx_border[self.border_axes_mask[1],1,:,0]@p_update).T+ eval_dx_border_stage[self.border_axes_mask[1], 1].reshape(1,-1))**2)
+
+      
                 #n = jnp.linalg.norm(p_update)
                 #jax.lax.cond(
                 #    n < 1e-9,

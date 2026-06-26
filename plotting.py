@@ -29,6 +29,7 @@ def plot_convergence(mat_filepath, save_path="convergence_plot.pdf"):
     data = scipy.io.loadmat(mat_filepath)
     errors = data['errors']
     N_s = data['N_s'].flatten()
+
     
     # EPS values as defined in your convergence_analysis function
     EPS = [0.0001]
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     
     # Example matching the parameters in your main block: 
     # alpha=0.5, domain_type="L", lambda_damp=0.0
-    file_path = "error_mats/errors_heat_lambda0.0_inicond_hs6_3e-5_alpha0.01_L_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat"
+    file_path = "error_mats/errors_heat_lambda0.0_inicond_hs6_3e-5_alpha0.1_L_simpson_10_N_4-15_Eps_0.1-0.01-0.001-0.0001.mat"
     
     try:
         plot_convergence(file_path, save_path="heat_eq_convergence_L.pdf")
