@@ -198,7 +198,7 @@ def convergence_analysis(alpha, domain_type="square"):
     print("N:", N, "EPS:", EPS)
     T = 1
     resolution_plot = 20
-    resolution_quad = 8
+    resolution_quad = 10
     d = 2
     vertices = jnp.array([[-jnp.pi, -jnp.pi], [jnp.pi, jnp.pi]])
     print(f"Using {domain_type}-shaped domain and alpha = {alpha}.")
