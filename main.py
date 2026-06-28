@@ -193,7 +193,7 @@ def initial_cond_learn(domain_type="L", resolution_quad=15, eps=1e-5, N=200):
 
 
 def convergence_analysis(alpha, domain_type="square"):
-    N = 2**np.arange(4,13)
+    N = 2**np.arange(4,14)
     EPS = [0.1, 0.01, 0.001, 0.0001]
     print("N:", N, "EPS:", EPS)
     T = 1
