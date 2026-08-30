@@ -26,7 +26,7 @@ The code for this paper is divided into three distinct folders, mapping to the n
 The table below lists the figures from the paper and the exact scripts required to generate them. 
 
 | Paper Artifact | Branch | Computation Script | Plotting Script | 
-| :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | 
 | **Figure 5.1** | Main Branch | `num_sol_and_error_plot.py` | `plotting.py` | 
 | **Figure 5.2** | Main Branch | `main.py` | `convergence_plot.py` | 
 | **Figure 5.3** | L-shaped Domain Branch | - | `script_plotting_L/conv_an.py` | 
