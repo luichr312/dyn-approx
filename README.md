@@ -11,7 +11,7 @@ The computational heavy lifting, including gradient and Jacobian calculations, i
 
 To run the codebase, you will need the following primary libraries:
 * **JAX / JAX Numpy** 
-* **NumPy & SciPy:** 
+* **NumPy & SciPy** 
 
 ## Project Structure
 
@@ -25,10 +25,10 @@ The code for this paper is divided into three distinct folders, mapping to the n
 
 The table below lists the figures from the paper and the exact scripts required to generate them. 
 
-| Paper Artifact | Branch | Computation Script | Plotting Script | Directory |
+| Paper Artifact | Branch | Computation Script | Plotting Script | 
 | :--- | :--- | :--- | :--- | :--- |
-| **Figure 5.1** | Main Branch | `num_sol_and_error_plot.py` | `plotting.py` | `/heat_square/` |
-| **Figure 5.2** | Main Branch | `main.py` | `convergence_plot.py` | `/heat_l_shape/` |
-| **Figure 5.3** | L-shaped Domain Branch | - | `script_plotting_L/conv_an.py` | `/heat_l_shape/` |
-| **Figure 5.4** | L-shaped Domain Branch | - | `init_final_error_plot.py` | `/heat_l_shape/` |
-| **Figure 5.5** | L-shaped Domain Branch | - | `script_plotting_L/plot_sv.py` | `/heat_l_shape/` |
+| **Figure 5.1** | Main Branch | `num_sol_and_error_plot.py` | `plotting.py` | 
+| **Figure 5.2** | Main Branch | `main.py` | `convergence_plot.py` | 
+| **Figure 5.3** | L-shaped Domain Branch | - | `script_plotting_L/conv_an.py` | 
+| **Figure 5.4** | L-shaped Domain Branch | - | `init_final_error_plot.py` | 
+| **Figure 5.5** | L-shaped Domain Branch | - | `script_plotting_L/plot_sv.py` |
